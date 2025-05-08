@@ -6,11 +6,13 @@ This project collects real-time system performance metrics — including CPU and
 
 ## 🔧 Features
 
-- ✅ Collects CPU and memory usage every minute using `psutil`
+- ✅ Collects CPU, memory, disk, and network usage using `psutil`
 - ✅ Stores data in a persistent SQLite database
 - ✅ Visualizes performance trends in a browser-based dashboard
-- ✅ Refreshes dashboard automatically every 60 seconds
-- ✅ Easy to set up and run locally
+- ✅ Filters by time range (1h, 6h, 24h, All)
+- ✅ Auto-refresh every 60 seconds
+- ✅ Exports the latest data sample to `sample_metrics.csv` for portability
+- ✅ Deployed and accessible online via Render
 
 ---
 
@@ -36,6 +38,10 @@ pip install -r requirements.txt
 ---
 
 ## ▶️ How to Run
+
+### 🌐 Deployed Version
+You can also access the live dashboard here:  
+[https://system-performance-data-pipeline.onrender.com](https://system-performance-data-pipeline.onrender.com)
 
 ### 1. Set up the database:
 ```bash
@@ -66,7 +72,13 @@ http://127.0.0.1:8050
 > **Memory Graph**  
 > Displays memory usage (%) over time with a live line chart.
 
-These graphs refresh every 60 seconds and help visualize your system's resource usage trends.
+> **Disk Usage Graph**  
+> Shows disk usage percentage, helping monitor storage capacity.
+
+> **Network I/O Graph**  
+> Visualizes sent and received bytes, giving insight into network activity.
+
+These graphs refresh automatically every 60 seconds and include a time-range filter (1h, 6h, 24h, All) for real-time and historical insights.
 
 ---
 
@@ -74,13 +86,11 @@ These graphs refresh every 60 seconds and help visualize your system's resource 
 
 Here are some ideas to expand this project:
 
-- 📦 Add additional metrics like disk usage or network activity
-- 🧼 Implement data cleaning or outlier detection before plotting
-- ☁️ Deploy the dashboard using platforms like Render or Streamlit Cloud
-- ⚠️ Set up alerts for high CPU or memory usage
-- 🧪 Export data to CSV or integrate with external monitoring tools
+- 📈 Integrate rolling averages or smoothing for clearer trends
+- 🔔 Set up alerts for high CPU, memory, or disk usage
 
 ---
+
 
 ## 🧑‍💻 Author
 
