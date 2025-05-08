@@ -6,11 +6,14 @@ cursor = conn.cursor()
 
 # Create the table if it doesn't exist
 cursor.execute('''
-CREATE TABLE IF NOT EXISTS metrics (
-    timestamp TEXT,
-    cpu_percent REAL,
-    memory_percent REAL
-)
+    CREATE TABLE IF NOT EXISTS metrics (
+        timestamp TEXT,
+        cpu_percent REAL,
+        memory_percent REAL,
+        disk_percent REAL,
+        net_sent REAL,
+        net_recv REAL
+    )
 ''')
 
 # Save and close the connection
