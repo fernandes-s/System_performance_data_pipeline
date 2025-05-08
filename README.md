@@ -84,7 +84,7 @@ Here are some ideas to expand this project:
 
 ## 🧑‍💻 Author
 
-**Daniel Fernandes **  
+**Daniel Fernandes**  
 [GitHub](https://github.com/fernandes-s)  
 [LinkedIn](https://linkedin.com/in/fernandesss-s)
 
