@@ -4,6 +4,7 @@ from dash.dependencies import Input, Output
 import pandas as pd
 import sqlite3
 from datetime import datetime, timedelta
+import os
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
@@ -53,9 +54,16 @@ app.layout = html.Div(children=[
 
 # Fetch data from SQLite
 def fetch_data():
-    conn = sqlite3.connect('system_metrics.db')
-    df = pd.read_sql_query("SELECT * FROM metrics", conn)
-    conn.close()
+    csv_path = os.getenv("CSV_PATH")
+    
+    # If CSV_PATH is defined, load from CSV instead of database
+    if csv_path and os.path.exists(csv_path):
+        df = pd.read_csv(csv_path)
+    else:
+        conn = sqlite3.connect('system_metrics.db')
+        df = pd.read_sql_query("SELECT * FROM metrics", conn)
+        conn.close()
+
     df['timestamp'] = pd.to_datetime(df['timestamp'])
     return df
 
