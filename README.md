@@ -72,7 +72,13 @@ http://127.0.0.1:8050
 > **Memory Graph**  
 > Displays memory usage (%) over time with a live line chart.
 
-These graphs refresh every 60 seconds and help visualize your system's resource usage trends.
+> **Disk Usage Graph**  
+> Shows disk usage percentage, helping monitor storage capacity.
+
+> **Network I/O Graph**  
+> Visualizes sent and received bytes, giving insight into network activity.
+
+These graphs refresh automatically every 60 seconds and include a time-range filter (1h, 6h, 24h, All) for real-time and historical insights.
 
 ---
 
@@ -80,13 +86,11 @@ These graphs refresh every 60 seconds and help visualize your system's resource 
 
 Here are some ideas to expand this project:
 
-- 📦 Add additional metrics like disk usage or network activity
-- 🧼 Implement data cleaning or outlier detection before plotting
-- ☁️ Deploy the dashboard using platforms like Render or Streamlit Cloud
-- ⚠️ Set up alerts for high CPU or memory usage
-- 🧪 Export data to CSV or integrate with external monitoring tools
+- 📈 Integrate rolling averages or smoothing for clearer trends
+- 🔔 Set up alerts for high CPU, memory, or disk usage
 
 ---
+
 
 ## 🧑‍💻 Author
 
