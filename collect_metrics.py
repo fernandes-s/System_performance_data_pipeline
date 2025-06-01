@@ -1,8 +1,8 @@
 import psutil
 import sqlite3
-from datetime import datetime
 import time
 import pandas as pd
+from datetime import datetime
 
 
 # Collect system metrics every 60 seconds
@@ -26,7 +26,7 @@ while True:
     conn.commit()
 
     # Export a fresh sample every time
-    df = pd.read_sql_query("SELECT * FROM metrics ORDER BY timestamp DESC LIMIT 100", conn)
+    df = pd.read_sql_query("SELECT * FROM metrics ORDER BY timestamp DESC LIMIT 500", conn)
     df.to_csv("sample_metrics.csv", index=False)
 
     conn.close()
