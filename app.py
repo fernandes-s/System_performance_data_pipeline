@@ -283,9 +283,9 @@ def update_graphs(n, time_range, selected_date, dark_mode):
     return cpu_fig, mem_fig, disk_fig, network_fig
 
 # To deploy on render
-# if __name__ == '__main__':
-#     app.run(debug=False, host='0.0.0.0', port=10000)
+if __name__ == '__main__':
+    app.run(debug=False, host='0.0.0.0', port=10000)
 
 # # To debbug, run the app locally  --- http://127.0.0.1:8050/
-if __name__ == '__main__':
-    app.run(debug=True)  
+# if __name__ == '__main__':
+#     app.run(debug=True)  
