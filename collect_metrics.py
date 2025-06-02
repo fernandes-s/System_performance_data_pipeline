@@ -8,7 +8,7 @@ cursor = conn.cursor()
 
 # Collect current metrics
 timestamp = datetime.now().isoformat()
-cpu = psutil.cpu_percent()
+cpu = psutil.cpu_percent(interval=0.5)
 memory = psutil.virtual_memory().percent
 disk = psutil.disk_usage('/').percent
 net = psutil.net_io_counters()
