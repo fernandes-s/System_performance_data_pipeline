@@ -29,6 +29,7 @@ system-performance-pipeline/
 ├── daily_metrics/         # Folder storing daily CSV exports (one file per day)
 ├── task_scheduler/        # Folder with .xml files for Task Scheduler automation (collect, export, auto-push)
 ├── app.py                 # Dash app for the live dashboard (with dark mode, filters, etc.)
+├── auto_git_push.py       # Automates daily Git commit and push to GitHub using Task Scheduler
 ├── collect_metrics.py     # Collects real-time system metrics and inserts them into the SQLite database
 ├── create_db.py           # Initializes the SQLite database and creates the `metrics` table
 ├── export_daily.py        # Exports all metrics from today into a CSV file (stored in daily_metrics/)
