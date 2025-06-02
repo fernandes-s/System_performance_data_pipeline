@@ -17,6 +17,8 @@ This project collects system performance metrics — CPU, memory, disk, and netw
 - ✅ Auto-refresh every 60 seconds
 - ✅ Supports dark mode toggle
 - ✅ Deployable on [Render](https://render.com/)
+- ✅ Automatically pushes changes to GitHub daily (optional)
+
 
 ---
 
@@ -25,7 +27,7 @@ This project collects system performance metrics — CPU, memory, disk, and netw
 ```
 system-performance-pipeline/
 ├── daily_metrics/         # Folder storing daily CSV exports (one file per day)
-├── task_scheduler/        # Folder that contains .xml files for automating tasks via Task Scheduler
+├── task_scheduler/        # Folder with .xml files for Task Scheduler automation (collect, export, auto-push)
 ├── app.py                 # Dash app for the live dashboard (with dark mode, filters, etc.)
 ├── collect_metrics.py     # Collects real-time system metrics and inserts them into the SQLite database
 ├── create_db.py           # Initializes the SQLite database and creates the `metrics` table
@@ -97,7 +99,8 @@ Two automated tasks are needed:
 2. Click Import Task
 3. Import the ```.xml``` files found in the ```task_scheduler/``` folder.
 4. Set the correct path to ```collect_metrics.py``` and ```export_daily.py``` if your folder is located elsewhere.
-5. Enable both tasks.
+5. Automatic daily updates with ```auto_git_push.py``` are optinal but encouraged (same process for previous tasks).
+6. Enable both tasks.
 ⏰ Now your system will collect data and export it automatically.
 
 #### 🌐 5. Run the Dashboard Locally in the CLI
