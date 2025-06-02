@@ -175,7 +175,7 @@ def toggle_dark_mode(toggle_value):
             'marginRight': '1%',
             'flex': '1',
             'textAlign': 'center',
-            'color': 'white'
+            'color': 'black'
         }
     else:
         container_style = {
