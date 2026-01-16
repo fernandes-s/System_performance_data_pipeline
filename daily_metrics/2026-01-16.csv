@@ -1,0 +1,2 @@
+timestamp,cpu_percent,memory_percent,disk_percent,net_sent,net_recv
+2026-01-16T00:25:08.450228,100.0,91.2,77.9,1.638153076171875,13.852986335754395
