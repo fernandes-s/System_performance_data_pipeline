@@ -1,21 +1,35 @@
 import sqlite3
 
-# Connect to (or create) the database
-conn = sqlite3.connect('system_metrics.db')
-cursor = conn.cursor()
+def create_db(db_path="system_metrics.db"):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
 
-# Create the table if it doesn't exist
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS metrics (
-        timestamp TEXT,
-        cpu_percent REAL,
-        memory_percent REAL,
-        disk_percent REAL,
-        net_sent REAL,
-        net_recv REAL
-    )
-''')
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-# Save and close the connection
-conn.commit()
-conn.close()
+            timestamp TEXT NOT NULL,
+
+            cpu_percent REAL,
+            memory_percent REAL,
+            disk_percent REAL,
+
+            -- cumulative network counters (since boot)
+            net_sent_total_mb REAL,
+            net_recv_total_mb REAL,
+
+            -- per-interval deltas (used for analysis)
+            net_sent_delta_mb REAL,
+            net_recv_delta_mb REAL,
+
+            -- system context
+            uptime_seconds REAL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+if __name__ == "__main__":
+    create_db()
