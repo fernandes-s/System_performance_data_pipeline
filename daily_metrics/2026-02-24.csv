@@ -1,0 +1,1 @@
+id,timestamp,cpu_percent,memory_percent,disk_percent,net_sent_total_mb,net_recv_total_mb,net_sent_delta_mb,net_recv_delta_mb,uptime_seconds
