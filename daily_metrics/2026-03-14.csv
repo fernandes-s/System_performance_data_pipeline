@@ -1,0 +1,2 @@
+id,timestamp,cpu_percent,memory_percent,disk_percent,net_sent_total_mb,net_recv_total_mb,net_sent_delta_mb,net_recv_delta_mb,uptime_seconds
+11579,2026-03-14T08:11:28.481442,32.1,77.5,78.4,1.7446908950805664,14.974645614624023,1.626352310180664,14.70833683013916,81479.00090360641
