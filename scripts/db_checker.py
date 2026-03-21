@@ -1,8 +1,12 @@
+from pathlib import Path
 import sqlite3
 import pandas as pd
 
+# Resolve project root
+BASE_DIR = Path(__file__).resolve().parents[1]
+DB_PATH = BASE_DIR / "data" / "raw" / "system_metrics.db"
+
 # connect to database
-conn = sqlite3.connect("system_metrics.db")
 
 
 # ===============================

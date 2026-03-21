@@ -1,6 +1,14 @@
+from pathlib import Path
 import sqlite3
 
-def create_db(db_path="system_metrics.db"):
+# Resolve project root
+BASE_DIR = Path(__file__).resolve().parents[1]
+DB_PATH = BASE_DIR / "data" / "raw" / "system_metrics.db"
+
+def create_db(db_path=DB_PATH):
+    # Ensure parent directory exists
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 

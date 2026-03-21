@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DB_PATH = BASE_DIR / "data" / "raw" / "system_metrics.db"
-EXPORT_DIR = BASE_DIR / "data" / "exports" / "daily"
+EXPORT_DIR = BASE_DIR / "data" / "daily_exports" 
 
 # Ensure export folder exists
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
