@@ -1,9 +1,12 @@
-from pathlib import Path
-import sqlite3
-
-import pandas as pd
-import plotly.express as px
 import streamlit as st
+
+from utils.db import (
+    database_exists,
+    get_recent_window,
+    get_summary_metrics,
+    load_data,
+)
+from utils.charts import make_line_chart
 
 
 # =========================
@@ -17,59 +20,16 @@ st.set_page_config(
 
 
 # =========================
-# PATHS
-# =========================
-# app/main.py -> project root -> data/raw/system_metrics.db
-BASE_DIR = Path(__file__).resolve().parents[1]
-DB_PATH = BASE_DIR / "data" / "raw" / "system_metrics.db"
-
-
-# =========================
-# DATABASE FUNCTIONS
-# =========================
-def get_connection():
-    return sqlite3.connect(DB_PATH)
-
-
-@st.cache_data
-def load_data():
-    conn = get_connection()
-    query = """
-        SELECT
-            id,
-            timestamp,
-            cpu_percent,
-            memory_percent,
-            disk_percent,
-            net_sent_total_mb,
-            net_recv_total_mb,
-            net_sent_delta_mb,
-            net_recv_delta_mb,
-            uptime_seconds
-        FROM metrics
-        ORDER BY timestamp ASC
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-
-    if not df.empty:
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-
-    return df
-
-
-# =========================
 # LOAD DATA
 # =========================
 st.title("System Metrics Monitoring Dashboard")
 st.write(
-    "This dashboard shows recent system performance data collected from the local machine "
-    "and stored in SQLite. It provides a simple view of current system state and recent trends."
+    "A lightweight overview of the system monitoring pipeline. "
+    "Use the navigation cards below to explore anomaly detection, system information, and model details."
 )
 
-# check database exists
-if not DB_PATH.exists():
-    st.error(f"Database not found at: {DB_PATH}")
+if not database_exists():
+    st.error("Database not found. Please check that data/raw/system_metrics.db exists.")
     st.stop()
 
 df = load_data()
@@ -80,92 +40,84 @@ if df.empty:
 
 
 # =========================
-# LATEST TIMESTAMP / BASIC INFO
+# PREP DATA
 # =========================
-latest_timestamp = df["timestamp"].max()
+summary = get_summary_metrics(df)
+chart_df = get_recent_window(df, days=7)
 
+
+# =========================
+# KPI ROW
+# =========================
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+with kpi1:
+    with st.container(border=True):
+        st.metric("Latest Timestamp", summary["latest_timestamp_display"])
+
+with kpi2:
+    with st.container(border=True):
+        st.metric("Total Records", f'{summary["total_records"]:,}')
+
+with kpi3:
+    with st.container(border=True):
+        st.metric("Average CPU", f'{summary["avg_cpu"]:.1f}%')
+
+with kpi4:
+    with st.container(border=True):
+        st.metric("Average Memory", f'{summary["avg_memory"]:.1f}%')
+
+
+st.caption("Overview charts below show the most recent 7 days of data.")
+
+
+# =========================
+# QUICK NAVIGATION
+# =========================
+st.subheader("Explore the Dashboard")
+
+nav1, nav2, nav3 = st.columns(3)
+
+with nav1:
+    with st.container(border=True):
+        st.markdown("### Anomalies")
+        st.write("Investigate detected anomalies and view flagged system behaviour on charts.")
+        st.page_link("pages/anomalies.py", label="Open Anomalies Page", icon="🚨")
+
+with nav2:
+    with st.container(border=True):
+        st.markdown("### System Info")
+        st.write("Review pipeline health, database coverage, time ranges, and data quality checks.")
+        st.page_link("pages/system_info.py", label="Open System Info Page", icon="🖥️")
+
+with nav3:
+    with st.container(border=True):
+        st.markdown("### Model Diagnostics")
+        st.write("Inspect model settings, anomaly scores, and feature-level detection details.")
+        st.page_link("pages/model_diagnostics.py", label="Open Model Diagnostics", icon="📈")
+
+
+# =========================
+# OVERVIEW CHARTS
+# =========================
 col1, col2 = st.columns(2)
+
 with col1:
-    st.metric("Latest Timestamp", str(latest_timestamp))
+    with st.container(border=True):
+        fig_cpu = make_line_chart(
+            chart_df,
+            y_col="cpu_percent",
+            title="CPU Usage",
+            y_label="CPU %"
+        )
+        st.plotly_chart(fig_cpu, width="stretch")
+
 with col2:
-    st.metric("Total Records", len(df))
-
-
-# =========================
-# LAST 20 ROWS
-# =========================
-st.subheader("Last 20 Rows")
-st.dataframe(
-    df.sort_values("timestamp", ascending=False).head(20),
-    use_container_width=True
-)
-
-
-# =========================
-# CPU OVER TIME
-# =========================
-st.subheader("CPU Usage Over Time")
-fig_cpu = px.line(
-    df,
-    x="timestamp",
-    y="cpu_percent",
-    title="CPU Usage (%)"
-)
-fig_cpu.update_layout(xaxis_title="Timestamp", yaxis_title="CPU %")
-st.plotly_chart(fig_cpu, use_container_width=True)
-
-
-# =========================
-# MEMORY OVER TIME
-# =========================
-st.subheader("Memory Usage Over Time")
-fig_memory = px.line(
-    df,
-    x="timestamp",
-    y="memory_percent",
-    title="Memory Usage (%)"
-)
-fig_memory.update_layout(xaxis_title="Timestamp", yaxis_title="Memory %")
-st.plotly_chart(fig_memory, use_container_width=True)
-
-
-# =========================
-# DISK OVER TIME
-# =========================
-st.subheader("Disk Usage Over Time")
-fig_disk = px.line(
-    df,
-    x="timestamp",
-    y="disk_percent",
-    title="Disk Usage (%)"
-)
-fig_disk.update_layout(xaxis_title="Timestamp", yaxis_title="Disk %")
-st.plotly_chart(fig_disk, use_container_width=True)
-
-
-# =========================
-# NETWORK DELTAS
-# =========================
-st.subheader("Network Activity Over Time")
-
-col3, col4 = st.columns(2)
-
-with col3:
-    fig_net_sent = px.line(
-        df,
-        x="timestamp",
-        y="net_sent_delta_mb",
-        title="Network Sent Delta (MB)"
-    )
-    fig_net_sent.update_layout(xaxis_title="Timestamp", yaxis_title="MB Sent")
-    st.plotly_chart(fig_net_sent, use_container_width=True)
-
-with col4:
-    fig_net_recv = px.line(
-        df,
-        x="timestamp",
-        y="net_recv_delta_mb",
-        title="Network Received Delta (MB)"
-    )
-    fig_net_recv.update_layout(xaxis_title="Timestamp", yaxis_title="MB Received")
-    st.plotly_chart(fig_net_recv, use_container_width=True)
+    with st.container(border=True):
+        fig_memory = make_line_chart(
+            chart_df,
+            y_col="memory_percent",
+            title="Memory Usage",
+            y_label="Memory %"
+        )
+        st.plotly_chart(fig_memory, width="stretch")
