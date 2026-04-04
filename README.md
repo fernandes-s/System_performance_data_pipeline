@@ -1,192 +1,231 @@
-<div align="center">
-  <h1>🖥️ System Performance Data Pipeline</h1>
-</div>
+# System Performance Data Pipeline
 
+A Python-based system monitoring and anomaly detection project that collects performance metrics, stores them in SQLite, exports daily snapshots, and presents the results through a Streamlit dashboard.
 
-This project collects system performance metrics — CPU, memory, disk, and network usage — every 5 minutes and stores them in a local SQLite database. The data is exported daily and visualized in an interactive Dash app with optional dark mode and live updates.
+## Project Overview
 
----
+This project was built as a final year computing project to demonstrate the design of a small end-to-end data pipeline for system monitoring. It automates the collection of system metrics, stores the data locally, prepares it for analysis, and applies anomaly detection to identify unusual behaviour in system performance over time.
 
-## 🔧 Features
+The project combines data collection, storage, preprocessing, modelling, and dashboarding in one workflow.
 
-- ✅ Collects CPU, memory, disk, and network usage using `psutil`
-- ✅ Stores data in a persistent SQLite database
-- ✅ Exports daily CSV files with performance metrics
-- ✅ Visualizes trends in a web-based dashboard
-- ✅ Filters by date and hour range
-- ✅ Auto-refresh every 60 seconds
-- ✅ Supports dark mode toggle
-- ✅ Deployable on [Render](https://render.com/)
-- ✅ Automatically pushes changes to GitHub daily (optional)
+## Features
 
+- Automated system metric collection
+- SQLite database storage
+- Daily metric exports to CSV
+- Data cleaning and preprocessing pipeline
+- Isolation Forest anomaly detection
+- Streamlit dashboard for monitoring and analysis
+- Modular project structure for easier maintenance and extension
 
----
+## Metrics Collected
 
-## 📁 Project Structure
+The pipeline currently collects the following system-level metrics:
 
+- CPU usage percentage
+- Memory usage percentage
+- Disk usage percentage
+- Total network sent (MB)
+- Total network received (MB)
+- Network sent delta between collections (MB)
+- Network received delta between collections (MB)
+- System uptime in seconds
+- Timestamp for each reading
+
+## Project Structure
+
+```text
+System_performance_data_pipeline/
+├── app/
+│   ├── main.py
+│   ├── utils/
+│   │   ├── db.py
+│   │   └── helpers.py
+│   └── pages/
+│       ├── anomalies.py
+│       ├── model_diagnostics.py
+│       └── system_info.py
+├── artifacts/
+│   └── models/
+│       ├── isolation_forest_model.joblib
+│       └── scaler.joblib
+├── data/
+│   ├── exports/
+│   └── raw/
+│       └── system_metrics.db
+├── notebooks/
+├── scripts/
+│   ├── collect_metrics.py
+│   ├── create_db.py
+│   ├── db_checker.py
+│   ├── export_daily.py
+│   └── quick_db_test.py
+├── src/
+│   └── models/
+│       ├── anomaly_model.py
+│       ├── preprocessing.py
+│       └── train_model.py
+├── requirements.txt
+└── README.md
 ```
-system-performance-pipeline/
-├── daily_metrics/         # Folder storing daily CSV exports (one file per day)
-├── task_scheduler/        # Folder with .xml files for Task Scheduler automation (collect, export, auto-push)
-├── app.py                 # Dash app for the live dashboard (with dark mode, filters, etc.)
-├── auto_git_push.py       # Automates daily Git commit and push to GitHub using Task Scheduler
-├── collect_metrics.py     # Collects real-time system metrics and inserts them into the SQLite database
-├── create_db.py           # Initializes the SQLite database and creates the `metrics` table
-├── export_daily.py        # Exports all metrics from today into a CSV file (stored in daily_metrics/)
-├── LICENSE                # Project license (MIT)
-├── README.md              # Project documentation
-├── render.yaml            # Render deployment configuration file
-├── requirements.txt       # Python dependencies needed to run the project
-├── system_metrics.db      # SQLite database file that stores all collected metrics
-└── view_db.py             # Utility script to view data from the database as a DataFrame
-         
-```
----
 
+## How the Pipeline Works
 
-## 📊 Metrics collected 
+### 1. Data Collection
 
-> **CPU Graph**  
-> Displays CPU usage (%) over time with a live line chart.
+The pipeline collects system performance metrics at regular intervals using Python. These metrics are gathered from the local machine and inserted into a SQLite database.
 
-> **Memory Graph**  
-> Displays memory usage (%) over time with a live line chart.
+### 2. Data Storage
 
-> **Disk Usage Graph**  
-> Shows disk usage percentage, helping monitor storage capacity.
+Collected metrics are stored in the `metrics` table inside `data/raw/system_metrics.db`. SQLite was used because it is lightweight, simple to manage, and suitable for a local monitoring project.
 
-> **Network I/O Graph**  
-> Visualizes sent and received bytes, giving insight into network activity.
+### 3. Daily Export
 
-These graphs refresh automatically every 5 minutes and include a time-range filter (1h, 2h, 4h, 6h, 8h, 12h, 24h), as well as dates in the calendar for real-time and historical insights.
+A daily export script saves collected metrics into CSV format for backup and external analysis.
 
+### 4. Data Preprocessing
 
+Before modelling, the data is cleaned and filtered to remove missing values, unrealistic values, and invalid network readings.
 
----
----
----
+### 5. Anomaly Detection
 
+The project uses an Isolation Forest model to identify unusual system behaviour. The model is trained on historical system metrics and saves anomaly results back into the database.
 
+### 6. Dashboarding
 
-## ▶️ How to Run
-### 🖥️ Option 1: Run Locally and Collect Your Own Metrics
+A Streamlit dashboard displays key metrics, trends, and anomaly-related information in an interactive format.
 
-You can run this dashboard on your own machine and collect metrics every 5 minutes using Task Scheduler.
+## Technologies Used
 
-#### 🔨 Clone the Repository
+- Python
+- SQLite
+- Pandas
+- Scikit-learn
+- Joblib
+- Streamlit
+- Psutil
+- Plotly
+
+## Installation
+
+Clone the repository:
+
 ```bash
 git clone https://github.com/fernandes-s/System_performance_data_pipeline.git
 cd System_performance_data_pipeline
 ```
 
-#### ✅ Requirements
-Make sure you have Python 3.9+ installed. Then run:
+Install the required packages:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-#### 🗃️ 3. Initialize the Database
+## How to Run the Project
+
+### Step 1: Create the database
+
 ```bash
-python create_db.py
+python scripts/create_db.py
 ```
 
-#### 📅 4. Set Up Task Scheduler (Windows)
-Two automated tasks are needed:
-- `collect_metrics.xml` - Collects real-time metrics every 5 minutes
-- `export_daily.xml` - Exports daily metrics into CSV at 23:55   
+### Step 2: Collect system metrics
 
-###### ✅ How to Set Up
-1. Open Task Scheduler
-2. Click Import Task
-3. Import the ```.xml``` files found in the ```task_scheduler/``` folder.
-4. Set the correct path to ```collect_metrics.py``` and ```export_daily.py``` if your folder is located elsewhere.
-5. Automatic daily updates with ```auto_git_push.py``` are optinal but encouraged (same process for previous tasks).
-6. Enable both tasks.
-⏰ Now your system will collect data and export it automatically.
-
-#### 🌐 5. Run the Dashboard Locally in the CLI
 ```bash
-python app.py
-```
-Then open your browser and go to:
-```bash
-http://127.0.0.1:8050
+python scripts/collect_metrics.py
 ```
 
+This script can also be scheduled to run automatically at fixed intervals using Task Scheduler.
 
----
+### Step 3: Export daily metrics
 
-### ☁️ Option 2: Deploy Online with Render
-
-If you'd prefer to host the dashboard online:
-
-#### 🚀 1. Fork This Repository
-Simply fork this repository to your own GitHub account:
 ```bash
-https://github.com/fernandes-s/System_performance_data_pipeline
+python scripts/export_daily.py
 ```
-No need to clone or push anything — just fork and connect it to Render.
 
-#### ⚙️ 2. Create a Web Service on Render
-1. Go to https://render.com and log in.
-2. Click New Web Service
-3. Connect your GitHub and select your repository.
-4. Use the following settings:
-    - Environment: Python 3
-    - Build Command: ```pip install -r requirements.txt```
-    - Start Command: ```python app.py```
-    - Port: 10000 (set in ```app.py```)
-    - Runtime: ```render.yaml``` handles deployment configs.
-Once deployed, Render will give you a public URL like:
+### Step 4: Train the anomaly detection model
+
 ```bash
-https://system-performance-data-pipeline.onrender.com
+python src/models/train_model.py
 ```
-Note: The online version will only visualize static or uploaded ```.csv ``` files from the ```daily_metrics/``` folder. To get live updates, you'll need to push metrics manually or sync with cloud storage.
 
----
+### Step 5: Run the dashboard
 
+```bash
+streamlit run app/main.py
+```
 
+## Dashboard Pages
 
-## 🛠️ Troubleshooting & Tips
+### Main Dashboard
 
-- **Graphs not updating?**  
-  Ensure that `collect_metrics.py` is running every 5 minutes (Task Scheduler must be active) and that your system clock is accurate.
+The main dashboard provides a high-level overview of the latest system activity and recent trends.
 
-- **Dashboard resets time range or dark mode on refresh?**  
-  The current version does not persist user settings across refreshes. This could be improved by integrating `dcc.Store` or browser cookies to save state.
+### Anomalies Page
 
-- **File Not Found Errors?**  
-  Make sure the scripts (`collect_metrics.py`, `export_daily.py`) and the SQLite database are in the correct relative paths when importing tasks in Task Scheduler or when deploying.
+The anomalies page is intended to show unusual system behaviour and anomaly-related summaries.
 
-- **Deployment on Render is stuck or fails?**  
-  Double-check that your repository includes:
-  - A valid `requirements.txt`
-  - A working `render.yaml` file
-  - Correct port configuration (your `app.py` should have `port=10000`)
+### System Info Page
 
----
+This page focuses on data collection consistency, database records, and system monitoring information.
 
-<div align="center">
+### Model Diagnostics Page
 
-# ⭐️ If You Found This Useful
+This page is used to inspect model-related results, anomaly scoring behaviour, and supporting diagnostics.
 
-If you like this project, consider giving the repository a ⭐️ on GitHub!  
-It helps others discover it and encourages further improvements.
+## Current Stage of the Project
 
-</div>
+The project currently includes:
 
+- working metric collection
+- local SQLite storage
+- export functionality
+- preprocessing and anomaly detection code
+- saved model artefacts
+- a multi-page Streamlit dashboard structure
 
----
+The project is currently in the final integration and presentation stage. The main remaining work is focused on polishing, aligning documentation with the latest codebase, and making sure all dashboard pages are fully connected to real model outputs.
 
-## 🧑‍💻 Author
+## Challenges Faced
 
-**Daniel Fernandes**  
-[GitHub](https://github.com/fernandes-s)  
-[LinkedIn](https://linkedin.com/in/fernandesss-s)
+Some of the main challenges in the project included:
 
----
+- designing a clean project structure as the project expanded
+- managing paths across scripts, app pages, and data folders
+- handling network counter resets and invalid values
+- moving from a simple dashboard to a modular multi-page app
+- integrating machine learning output into a monitoring dashboard
 
-## 📜 License
+## Future Improvements
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+Possible improvements for the project include:
 
+- connecting all dashboard pages directly to final model outputs
+- adding more robust evaluation metrics for anomaly detection
+- improving model explainability
+- adding automated tests
+- deploying the dashboard online
+- storing model metadata and training logs
+- adding alerting functionality for critical anomalies
+
+## Learning Outcomes
+
+This project helped develop skills in:
+
+- data pipeline design
+- data collection and automation
+- database handling with SQLite
+- preprocessing and feature preparation
+- anomaly detection with machine learning
+- dashboard development with Streamlit
+- structuring and documenting a complete technical project
+
+## Author
+
+Daniel Fernandes
+
+## Repository
+
+This project is available on GitHub:
+
+`https://github.com/fernandes-s/System_performance_data_pipeline`
