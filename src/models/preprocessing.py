@@ -25,6 +25,31 @@ def validate_required_columns(df: pd.DataFrame):
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
+    if "timestamp" not in df.columns:
+        raise ValueError("Missing required column: ['timestamp']")
+
+
+# =========================
+# TIMESTAMP FILTERING
+# =========================
+def keep_exact_minute_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keeps only rows where the timestamp is exactly on the minute
+    (seconds == 0).
+
+    Examples kept:
+    - 2026-04-05T12:17:00.662978
+    - 2026-04-05 12:17:00
+
+    Examples removed:
+    - 2026-04-05T12:09:47.738971
+    - 2026-04-05T12:08:24.794534
+    """
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+    return df[df["timestamp"].dt.second == 0]
+
 
 # =========================
 # CLEANING FUNCTIONS
@@ -123,8 +148,12 @@ def clean_metrics(
 
     original_len = len(df)
 
+    # Step 0 — keep only exact minute timestamps
+    df_clean = keep_exact_minute_timestamps(df)
+    after_timestamp = len(df_clean)
+
     # Step 1 — remove missing values
-    df_clean = drop_missing(df)
+    df_clean = drop_missing(df_clean)
     after_na = len(df_clean)
 
     # Step 2 — handle invalid ranges
@@ -145,11 +174,12 @@ def clean_metrics(
     after_outliers = len(df_clean)
 
     # =========================
-    # REPORTING (IMPORTANT FOR YOUR PROJECT)
+    # REPORTING
     # =========================
     if verbose:
         print("\n=== DATA CLEANING SUMMARY ===")
         print(f"Original rows: {original_len}")
+        print(f"After timestamp filtering: {after_timestamp}")
         print(f"After NA removal: {after_na}")
         print(f"After range handling: {after_range}")
         print(f"After network filtering: {after_network}")
