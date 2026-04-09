@@ -10,6 +10,7 @@ import pandas as pd
 from models.preprocessing import clean_metrics
 from models.anomaly_model import run_anomaly_pipeline, save_model, save_scaler
 
+
 # =========================
 # PATHS
 # =========================
@@ -54,7 +55,11 @@ def load_model_data(conn) -> pd.DataFrame:
     return df
 
 
-def save_anomaly_results(conn, results_df: pd.DataFrame, table_name: str = "anomaly_results"):
+def save_anomaly_results(
+    conn,
+    results_df: pd.DataFrame,
+    table_name: str = "anomaly_results"
+):
     """
     Saves anomaly results into a separate SQLite table.
     Replaces the table on each run so results stay consistent with the latest model run.
@@ -70,35 +75,124 @@ def save_anomaly_results(conn, results_df: pd.DataFrame, table_name: str = "anom
         "uptime_seconds",
         "anomaly_score",
         "is_anomaly",
+        "cpu_zscore",
+        "memory_zscore",
+        "disk_zscore",
+        "net_sent_zscore",
+        "net_recv_zscore",
+        "uptime_zscore",
+        "top_driver",
+        "driver_count",
+        "explanation",
+        "anomaly_strength",
     ]
 
-    save_df = results_df[output_cols].copy()
+    available_cols = [col for col in output_cols if col in results_df.columns]
+    save_df = results_df[available_cols].copy()
     save_df["timestamp"] = save_df["timestamp"].astype(str)
 
     save_df.to_sql(table_name, conn, if_exists="replace", index=False)
 
 
 # =========================
-# REPORTING
+# REPORTING HELPERS
 # =========================
-def print_run_summary(raw_df: pd.DataFrame, clean_df: pd.DataFrame, results_df: pd.DataFrame):
+def get_anomaly_only_df(results_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Returns only the flagged anomaly rows.
+    """
+    if results_df.empty or "is_anomaly" not in results_df.columns:
+        return pd.DataFrame()
+
+    return results_df[results_df["is_anomaly"] == 1].copy()
+
+
+def print_driver_summary(anomaly_df: pd.DataFrame, top_n: int = 5):
+    """
+    Prints the most common anomaly drivers.
+    """
+    if anomaly_df.empty or "top_driver" not in anomaly_df.columns:
+        print("Top drivers: not available")
+        return
+
+    driver_counts = anomaly_df["top_driver"].value_counts().head(top_n)
+
+    if driver_counts.empty:
+        print("Top drivers: none")
+        return
+
+    print("\nMost common anomaly drivers:")
+    for driver, count in driver_counts.items():
+        print(f"  - {driver}: {count}")
+
+
+def print_example_case_studies(anomaly_df: pd.DataFrame, top_n: int = 3):
+    """
+    Prints a few of the strongest anomaly examples for interpretation.
+    """
+    if anomaly_df.empty:
+        print("\nNo anomaly case studies available.")
+        return
+
+    case_df = anomaly_df.sort_values("anomaly_score", ascending=False).head(top_n)
+
+    print("\nExample anomaly case studies:")
+    for _, row in case_df.iterrows():
+        timestamp = row.get("timestamp", "N/A")
+        score = row.get("anomaly_score", None)
+        top_driver = row.get("top_driver", "N/A")
+        strength = row.get("anomaly_strength", "N/A")
+        explanation = row.get("explanation", "N/A")
+
+        score_text = f"{score:.6f}" if pd.notna(score) else "N/A"
+
+        print(f"  - Timestamp: {timestamp}")
+        print(f"    Score: {score_text}")
+        print(f"    Strength: {strength}")
+        print(f"    Driver: {top_driver}")
+        print(f"    Interpretation: {explanation}")
+
+
+def print_run_summary(
+    raw_df: pd.DataFrame,
+    clean_df: pd.DataFrame,
+    results_df: pd.DataFrame,
+    feature_cols: list[str]
+):
+    """
+    Prints a stronger training summary with anomaly interpretation.
+    """
     total_rows = len(raw_df)
     clean_rows = len(clean_df)
     removed_rows = total_rows - clean_rows
-    anomaly_count = int(results_df["is_anomaly"].sum()) if not results_df.empty else 0
+    anomaly_df = get_anomaly_only_df(results_df)
+    anomaly_count = len(anomaly_df)
 
     print("\n=== MODEL TRAINING SUMMARY ===")
     print(f"Database path: {DB_PATH}")
     print(f"Raw rows loaded: {total_rows}")
     print(f"Rows after cleaning: {clean_rows}")
     print(f"Rows removed during cleaning: {removed_rows}")
+    print(f"Features used: {', '.join(feature_cols)}")
     print(f"Anomalies detected: {anomaly_count}")
 
     if not results_df.empty:
         print(f"Anomaly score min: {results_df['anomaly_score'].min():.6f}")
         print(f"Anomaly score max: {results_df['anomaly_score'].max():.6f}")
 
-    print(f"Results saved to table: anomaly_results")
+    if not anomaly_df.empty:
+        strong_count = (anomaly_df["anomaly_strength"] == "strong").sum()
+        moderate_count = (anomaly_df["anomaly_strength"] == "moderate").sum()
+        weak_count = (anomaly_df["anomaly_strength"] == "weak").sum()
+
+        print(f"Strong anomalies: {strong_count}")
+        print(f"Moderate anomalies: {moderate_count}")
+        print(f"Weak anomalies: {weak_count}")
+
+        print_driver_summary(anomaly_df)
+        print_example_case_studies(anomaly_df, top_n=3)
+
+    print(f"\nResults saved to table: anomaly_results")
     print(f"Model saved to: {MODEL_PATH}")
     print(f"Scaler saved to: {SCALER_PATH}")
     print("==============================\n")
@@ -132,7 +226,7 @@ def main():
             raise ValueError("No rows left after cleaning. Check your cleaning rules or raw data quality.")
 
         # 3. Train model and score anomalies
-        results_df, model, scaler = run_anomaly_pipeline(
+        results_df, model, scaler, feature_cols = run_anomaly_pipeline(
             df=df_clean,
             feature_cols=None,      # uses DEFAULT_FEATURES from anomaly_model.py
             contamination=0.02,
@@ -148,7 +242,7 @@ def main():
         save_scaler(scaler, SCALER_PATH)
 
         # 6. Print summary
-        print_run_summary(df, df_clean, results_df)
+        print_run_summary(df, df_clean, results_df, feature_cols)
 
     finally:
         conn.close()

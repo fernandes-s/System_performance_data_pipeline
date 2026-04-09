@@ -17,6 +17,15 @@ DEFAULT_FEATURES = [
     "uptime_seconds",
 ]
 
+FEATURE_LABELS = {
+    "cpu_percent": "CPU usage",
+    "memory_percent": "Memory usage",
+    "disk_percent": "Disk usage",
+    "net_sent_delta_mb": "Network sent",
+    "net_recv_delta_mb": "Network received",
+    "uptime_seconds": "System uptime",
+}
+
 
 # =========================
 # FEATURE PREPARATION
@@ -148,17 +157,177 @@ def score_model(model: IsolationForest, X: pd.DataFrame) -> tuple[pd.Series, pd.
     return anomaly_score, is_anomaly
 
 
+# =========================
+# INTERPRETATION HELPERS
+# =========================
+def get_zscore_column_name(feature_name: str) -> str:
+    """
+    Converts an original feature name into a readable z-score column name.
+    """
+    mapping = {
+        "cpu_percent": "cpu_zscore",
+        "memory_percent": "memory_zscore",
+        "disk_percent": "disk_zscore",
+        "net_sent_delta_mb": "net_sent_zscore",
+        "net_recv_delta_mb": "net_recv_zscore",
+        "uptime_seconds": "uptime_zscore",
+    }
+    return mapping.get(feature_name, f"{feature_name}_zscore")
+
+
+def classify_anomaly_strength(anomaly_score: float) -> str:
+    """
+    Converts anomaly score into a simple strength label.
+
+    Higher anomaly_score = more anomalous.
+    """
+    if anomaly_score >= 0.09:
+        return "strong"
+    if anomaly_score >= 0.05:
+        return "moderate"
+    return "weak"
+
+
+def get_feature_direction(z_value: float) -> str:
+    """
+    Returns whether a feature is unusually high or low.
+    """
+    return "high" if z_value > 0 else "low"
+
+
+def build_explanation_from_row(row: pd.Series, feature_cols: list[str]) -> str:
+    """
+    Builds a short human-readable explanation for one row based on z-scores.
+    """
+    feature_details = []
+
+    for feature in feature_cols:
+        z_col = get_zscore_column_name(feature)
+        z_value = row[z_col]
+        abs_z = abs(z_value)
+
+        feature_details.append(
+            {
+                "feature": feature,
+                "label": FEATURE_LABELS.get(feature, feature),
+                "z_value": z_value,
+                "abs_z": abs_z,
+                "direction": get_feature_direction(z_value),
+            }
+        )
+
+    feature_details = sorted(feature_details, key=lambda x: x["abs_z"], reverse=True)
+
+    strong_drivers = [item for item in feature_details if item["abs_z"] >= 2.0]
+    top_feature = feature_details[0]
+
+    if strong_drivers:
+        driver_parts = [
+            f"{item['label']} unusually {item['direction']}"
+            for item in strong_drivers[:3]
+        ]
+        return "; ".join(driver_parts)
+
+    return (
+        f"{top_feature['label']} slightly unusual "
+        f"({top_feature['direction']}) compared to normal behaviour"
+    )
+
+
+def add_interpretation_columns(
+    df: pd.DataFrame,
+    X_scaled: pd.DataFrame,
+    feature_cols: list[str]
+) -> pd.DataFrame:
+    """
+    Adds z-score columns and anomaly interpretation fields.
+
+    Added columns
+    -------------
+    - one z-score column per feature
+    - top_driver
+    - driver_count
+    - explanation
+    - anomaly_strength
+    """
+    result_df = df.copy()
+
+    # Add z-score columns
+    zscore_cols = []
+    for feature in feature_cols:
+        z_col = get_zscore_column_name(feature)
+        result_df[z_col] = X_scaled[feature]
+        zscore_cols.append(z_col)
+
+    top_drivers = []
+    driver_counts = []
+    explanations = []
+    anomaly_strengths = []
+
+    for _, row in result_df.iterrows():
+        feature_rank = []
+
+        for feature in feature_cols:
+            z_col = get_zscore_column_name(feature)
+            z_value = row[z_col]
+
+            feature_rank.append(
+                {
+                    "feature": feature,
+                    "label": FEATURE_LABELS.get(feature, feature),
+                    "z_value": z_value,
+                    "abs_z": abs(z_value),
+                    "direction": get_feature_direction(z_value),
+                }
+            )
+
+        feature_rank = sorted(feature_rank, key=lambda x: x["abs_z"], reverse=True)
+        strong_drivers = [item for item in feature_rank if item["abs_z"] >= 2.0]
+        top_feature = feature_rank[0]
+
+        if strong_drivers:
+            top_driver = f"{strong_drivers[0]['label']} unusually {strong_drivers[0]['direction']}"
+            driver_count = len(strong_drivers)
+        else:
+            top_driver = f"{top_feature['label']} slightly unusual ({top_feature['direction']})"
+            driver_count = 1
+
+        explanation = build_explanation_from_row(row, feature_cols)
+        strength = classify_anomaly_strength(row["anomaly_score"])
+
+        top_drivers.append(top_driver)
+        driver_counts.append(driver_count)
+        explanations.append(explanation)
+        anomaly_strengths.append(strength)
+
+    result_df["top_driver"] = top_drivers
+    result_df["driver_count"] = driver_counts
+    result_df["explanation"] = explanations
+    result_df["anomaly_strength"] = anomaly_strengths
+
+    return result_df
+
+
 def add_anomaly_results(
     df: pd.DataFrame,
     anomaly_score,
-    is_anomaly
+    is_anomaly,
+    X_scaled: pd.DataFrame,
+    feature_cols: list[str]
 ) -> pd.DataFrame:
     """
-    Returns a copy of the dataframe with anomaly outputs added.
+    Returns a copy of the dataframe with anomaly outputs and interpretation added.
     """
     result_df = df.copy()
     result_df["anomaly_score"] = anomaly_score
     result_df["is_anomaly"] = is_anomaly
+
+    result_df = add_interpretation_columns(
+        df=result_df,
+        X_scaled=X_scaled,
+        feature_cols=feature_cols
+    )
+
     return result_df
 
 
@@ -179,7 +348,8 @@ def run_anomaly_pipeline(
     3. transform features
     4. train Isolation Forest
     5. score rows
-    6. return dataframe with anomaly outputs
+    6. add interpretation columns
+    7. return dataframe with anomaly outputs
 
     Returns
     -------
@@ -201,7 +371,14 @@ def run_anomaly_pipeline(
     )
 
     anomaly_score, is_anomaly = score_model(model, X_scaled)
-    results_df = add_anomaly_results(df, anomaly_score, is_anomaly)
+
+    results_df = add_anomaly_results(
+        df=df,
+        anomaly_score=anomaly_score,
+        is_anomaly=is_anomaly,
+        X_scaled=X_scaled,
+        feature_cols=feature_cols
+    )
 
     return results_df, model, scaler, feature_cols
 

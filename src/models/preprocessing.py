@@ -48,7 +48,7 @@ def keep_exact_minute_timestamps(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
 
-    return df[df["timestamp"].dt.second == 0]
+    return df[df["timestamp"].notna() & (df["timestamp"].dt.second == 0)]
 
 
 # =========================
@@ -117,32 +117,115 @@ def clip_ranges(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================
+# SUMMARY HELPERS
+# =========================
+def build_cleaning_summary(
+    original_len: int,
+    after_timestamp: int,
+    after_na: int,
+    after_range: int,
+    after_network: int,
+    after_outliers: int,
+    use_clipping: bool,
+    remove_outliers: bool
+) -> dict:
+    """
+    Builds a row-count summary for each cleaning stage.
+    """
+    summary = {
+        "original_rows": original_len,
+        "after_timestamp_filter": after_timestamp,
+        "after_na_removal": after_na,
+        "after_range_handling": after_range,
+        "after_network_filtering": after_network,
+        "after_outlier_removal": after_outliers,
+        "removed_at_timestamp_filter": original_len - after_timestamp,
+        "removed_at_na_removal": after_timestamp - after_na,
+        "removed_at_range_handling": after_na - after_range,
+        "removed_at_network_filtering": after_range - after_network,
+        "removed_at_outlier_removal": after_network - after_outliers,
+        "total_rows_removed": original_len - after_outliers,
+        "use_clipping": use_clipping,
+        "remove_outliers": remove_outliers,
+    }
+    return summary
+
+
+def summary_dict_to_dataframe(summary: dict) -> pd.DataFrame:
+    """
+    Converts the cleaning summary dictionary to a dataframe.
+    Useful for saving or displaying in diagnostics pages.
+    """
+    return pd.DataFrame(
+        [{"step": key, "value": value} for key, value in summary.items()]
+    )
+
+
+def print_cleaning_summary(summary: dict):
+    """
+    Prints the cleaning summary in a clearer report format.
+    """
+    print("\n=== DATA CLEANING SUMMARY ===")
+    print(f"Original rows: {summary['original_rows']}")
+    print(
+        f"After timestamp filtering: {summary['after_timestamp_filter']} "
+        f"(removed {summary['removed_at_timestamp_filter']})"
+    )
+    print(
+        f"After NA removal: {summary['after_na_removal']} "
+        f"(removed {summary['removed_at_na_removal']})"
+    )
+    print(
+        f"After range handling: {summary['after_range_handling']} "
+        f"(removed {summary['removed_at_range_handling']})"
+    )
+    print(
+        f"After network filtering: {summary['after_network_filtering']} "
+        f"(removed {summary['removed_at_network_filtering']})"
+    )
+    print(
+        f"After outlier removal: {summary['after_outlier_removal']} "
+        f"(removed {summary['removed_at_outlier_removal']})"
+    )
+    print(f"Total rows removed: {summary['total_rows_removed']}")
+    print("=============================\n")
+
+
+# =========================
 # MAIN CLEANING PIPELINE
 # =========================
 def clean_metrics(
     df: pd.DataFrame,
     use_clipping: bool = False,
     remove_outliers: bool = True,
-    verbose: bool = True
-) -> pd.DataFrame:
+    verbose: bool = True,
+    return_summary: bool = False
+):
     """
     Full cleaning pipeline.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Raw dataframe from SQLite
+        Raw dataframe from SQLite.
     use_clipping : bool
-        If True, clip invalid values instead of dropping rows
+        If True, clip invalid values instead of dropping rows.
     remove_outliers : bool
-        If True, remove extreme values (network spikes)
+        If True, remove extreme values (network spikes).
     verbose : bool
-        If True, print cleaning summary
+        If True, print cleaning summary.
+    return_summary : bool
+        If True, returns both cleaned dataframe and cleaning summary.
 
     Returns
     -------
     pd.DataFrame
         Cleaned dataframe
+
+    or
+
+    tuple[pd.DataFrame, dict]
+        Cleaned dataframe and cleaning summary
     """
     validate_required_columns(df)
 
@@ -171,20 +254,27 @@ def clean_metrics(
     # Step 4 — outliers (optional)
     if remove_outliers:
         df_clean = remove_extreme_outliers(df_clean)
-    after_outliers = len(df_clean)
+        after_outliers = len(df_clean)
+    else:
+        after_outliers = len(df_clean)
 
-    # =========================
-    # REPORTING
-    # =========================
+    summary = build_cleaning_summary(
+        original_len=original_len,
+        after_timestamp=after_timestamp,
+        after_na=after_na,
+        after_range=after_range,
+        after_network=after_network,
+        after_outliers=after_outliers,
+        use_clipping=use_clipping,
+        remove_outliers=remove_outliers
+    )
+
     if verbose:
-        print("\n=== DATA CLEANING SUMMARY ===")
-        print(f"Original rows: {original_len}")
-        print(f"After timestamp filtering: {after_timestamp}")
-        print(f"After NA removal: {after_na}")
-        print(f"After range handling: {after_range}")
-        print(f"After network filtering: {after_network}")
-        print(f"After outlier removal: {after_outliers}")
-        print(f"Total rows removed: {original_len - after_outliers}")
-        print("=============================\n")
+        print_cleaning_summary(summary)
 
-    return df_clean.reset_index(drop=True)
+    df_clean = df_clean.reset_index(drop=True)
+
+    if return_summary:
+        return df_clean, summary
+
+    return df_clean

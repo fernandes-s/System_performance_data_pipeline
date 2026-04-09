@@ -60,6 +60,9 @@ def load_anomaly_data():
     return df
 
 
+# =========================
+# HELPER FUNCTIONS
+# =========================
 def format_metric(value, decimals=0):
     if pd.isna(value):
         return "N/A"
@@ -68,12 +71,61 @@ def format_metric(value, decimals=0):
     return f"{value:,.{decimals}f}"
 
 
+def get_available_columns(df: pd.DataFrame, columns: list[str]) -> list[str]:
+    return [col for col in columns if col in df.columns]
+
+
+def build_metric_chart(
+    df: pd.DataFrame,
+    anomaly_points: pd.DataFrame,
+    y_col: str,
+    title: str,
+    y_axis_title: str
+):
+    fig = px.line(
+        df,
+        x="timestamp",
+        y=y_col,
+        title=title
+    )
+
+    if not anomaly_points.empty and y_col in anomaly_points.columns:
+        fig.add_scatter(
+            x=anomaly_points["timestamp"],
+            y=anomaly_points[y_col],
+            mode="markers",
+            name="Anomalies",
+            text=anomaly_points["top_driver"] if "top_driver" in anomaly_points.columns else None,
+            hovertemplate=(
+                "<b>Timestamp</b>: %{x}<br>"
+                f"<b>{y_axis_title}</b>: " + "%{y}<br>"
+                "<b>Driver</b>: %{text}<extra></extra>"
+            ) if "top_driver" in anomaly_points.columns else None
+        )
+
+    fig.update_layout(
+        xaxis_title="Timestamp",
+        yaxis_title=y_axis_title
+    )
+    return fig
+
+
+def ensure_required_columns(df: pd.DataFrame, required_columns: list[str]):
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        st.error(
+            f"The table '{ANOMALY_TABLE}' is missing these required columns: {missing_columns}"
+        )
+        st.stop()
+
+
 # =========================
 # PAGE TITLE
 # =========================
 st.title("🚨 Anomaly Detection")
 st.markdown(
-    "This page shows the anomaly detection results saved by the model pipeline."
+    "This page shows the anomaly detection results saved by the model pipeline, "
+    "including which behaviours were flagged and why they look unusual."
 )
 
 
@@ -116,12 +168,7 @@ required_columns = [
     "is_anomaly",
 ]
 
-missing_columns = [col for col in required_columns if col not in df.columns]
-if missing_columns:
-    st.error(
-        f"The table '{ANOMALY_TABLE}' is missing these required columns: {missing_columns}"
-    )
-    st.stop()
+ensure_required_columns(df, required_columns)
 
 df = df.dropna(subset=["timestamp"]).copy()
 
@@ -160,9 +207,28 @@ show_only_anomalies = st.sidebar.checkbox("Show anomalies only", value=False)
 if show_only_anomalies:
     filtered_df = filtered_df[filtered_df["is_anomaly"] == 1].copy()
 
+available_strengths = []
+if "anomaly_strength" in filtered_df.columns:
+    available_strengths = sorted(filtered_df["anomaly_strength"].dropna().unique().tolist())
+
+selected_strengths = available_strengths
+if available_strengths:
+    selected_strengths = st.sidebar.multiselect(
+        "Filter anomaly strength",
+        options=available_strengths,
+        default=available_strengths
+    )
+
+    if show_only_anomalies and selected_strengths:
+        filtered_df = filtered_df[
+            filtered_df["anomaly_strength"].isin(selected_strengths)
+        ].copy()
+
 if filtered_df.empty:
     st.warning("No records found for the selected filters.")
     st.stop()
+
+anomaly_points = filtered_df[filtered_df["is_anomaly"] == 1].copy()
 
 
 # =========================
@@ -173,15 +239,24 @@ total_anomalies = int(filtered_df["is_anomaly"].sum())
 anomaly_rate = (total_anomalies / total_records * 100) if total_records > 0 else 0
 latest_timestamp = filtered_df["timestamp"].max()
 
-anomaly_scores = filtered_df.loc[filtered_df["is_anomaly"] == 1, "anomaly_score"]
+anomaly_scores = anomaly_points["anomaly_score"] if not anomaly_points.empty else pd.Series(dtype=float)
 highest_score = anomaly_scores.max() if not anomaly_scores.empty else None
 
-col1, col2, col3, col4 = st.columns(4)
+strong_count = int((anomaly_points["anomaly_strength"] == "strong").sum()) if "anomaly_strength" in anomaly_points.columns else 0
+moderate_count = int((anomaly_points["anomaly_strength"] == "moderate").sum()) if "anomaly_strength" in anomaly_points.columns else 0
+weak_count = int((anomaly_points["anomaly_strength"] == "weak").sum()) if "anomaly_strength" in anomaly_points.columns else 0
 
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Records", format_metric(total_records))
 col2.metric("Detected Anomalies", format_metric(total_anomalies))
 col3.metric("Anomaly Rate", f"{anomaly_rate:.2f}%")
 col4.metric("Latest Timestamp", str(latest_timestamp))
+
+if "anomaly_strength" in filtered_df.columns:
+    col5, col6, col7 = st.columns(3)
+    col5.metric("Strong Anomalies", format_metric(strong_count))
+    col6.metric("Moderate Anomalies", format_metric(moderate_count))
+    col7.metric("Weak Anomalies", format_metric(weak_count))
 
 st.divider()
 
@@ -197,87 +272,176 @@ with st.expander("Run summary"):
     if highest_score is not None:
         st.write(f"**Highest anomaly score in current view:** {highest_score:.6f}")
 
+    if not anomaly_points.empty and "top_driver" in anomaly_points.columns:
+        top_driver_counts = anomaly_points["top_driver"].value_counts().head(3)
+        if not top_driver_counts.empty:
+            st.write("**Most common anomaly drivers in current view:**")
+            for driver, count in top_driver_counts.items():
+                st.write(f"- {driver}: {count}")
+
 
 # =========================
-# MAIN CHART - CPU WITH ANOMALIES
+# CASE STUDIES
 # =========================
-st.subheader("CPU Usage Over Time")
+st.subheader("Anomaly Case Studies")
 
-fig_cpu = px.line(
-    filtered_df,
-    x="timestamp",
-    y="cpu_percent",
-    title="CPU Usage Timeline"
-)
-
-anomaly_points = filtered_df[filtered_df["is_anomaly"] == 1]
-
-if not anomaly_points.empty:
-    fig_cpu.add_scatter(
-        x=anomaly_points["timestamp"],
-        y=anomaly_points["cpu_percent"],
-        mode="markers",
-        name="Anomalies"
+if anomaly_points.empty:
+    st.info("No anomalies detected in the selected date range.")
+else:
+    case_study_cols = get_available_columns(
+        anomaly_points,
+        [
+            "timestamp",
+            "anomaly_score",
+            "anomaly_strength",
+            "top_driver",
+            "explanation",
+            "cpu_percent",
+            "memory_percent",
+            "disk_percent",
+            "net_sent_delta_mb",
+            "net_recv_delta_mb",
+            "uptime_seconds",
+        ]
     )
 
-fig_cpu.update_layout(
-    xaxis_title="Timestamp",
-    yaxis_title="CPU %"
-)
+    case_studies = (
+        anomaly_points
+        .sort_values("anomaly_score", ascending=False)
+        .head(4)
+        .copy()
+    )
 
+    for i, (_, row) in enumerate(case_studies.iterrows(), start=1):
+        with st.container(border=True):
+            st.markdown(f"**Case Study {i}**")
+            st.write(f"**Timestamp:** {row['timestamp']}")
+            st.write(f"**Anomaly score:** {row['anomaly_score']:.6f}")
+
+            if "anomaly_strength" in row.index:
+                st.write(f"**Strength:** {row['anomaly_strength']}")
+
+            if "top_driver" in row.index:
+                st.write(f"**Main driver:** {row['top_driver']}")
+
+            if "explanation" in row.index:
+                st.write(f"**Interpretation:** {row['explanation']}")
+
+            detail_cols = st.columns(3)
+
+            if "cpu_percent" in row.index:
+                detail_cols[0].metric("CPU %", format_metric(row["cpu_percent"], 2))
+            if "memory_percent" in row.index:
+                detail_cols[1].metric("Memory %", format_metric(row["memory_percent"], 2))
+            if "disk_percent" in row.index:
+                detail_cols[2].metric("Disk %", format_metric(row["disk_percent"], 2))
+
+            detail_cols_2 = st.columns(3)
+
+            if "net_sent_delta_mb" in row.index:
+                detail_cols_2[0].metric("Net Sent Δ MB", format_metric(row["net_sent_delta_mb"], 3))
+            if "net_recv_delta_mb" in row.index:
+                detail_cols_2[1].metric("Net Recv Δ MB", format_metric(row["net_recv_delta_mb"], 3))
+            if "uptime_seconds" in row.index:
+                detail_cols_2[2].metric("Uptime Sec", format_metric(row["uptime_seconds"], 0))
+
+
+st.divider()
+
+
+# =========================
+# DRIVER DISTRIBUTION
+# =========================
+st.subheader("What Kind of Behaviour Is Being Flagged?")
+
+if anomaly_points.empty or "top_driver" not in anomaly_points.columns:
+    st.info("Driver information is not available yet.")
+else:
+    driver_counts = (
+        anomaly_points["top_driver"]
+        .value_counts()
+        .reset_index()
+    )
+    driver_counts.columns = ["top_driver", "count"]
+
+    fig_driver = px.bar(
+        driver_counts.head(10),
+        x="top_driver",
+        y="count",
+        title="Most Common Anomaly Drivers"
+    )
+    fig_driver.update_layout(
+        xaxis_title="Detected behaviour",
+        yaxis_title="Count"
+    )
+    st.plotly_chart(fig_driver, use_container_width=True)
+
+
+# =========================
+# CPU / MEMORY / DISK TIMELINES
+# =========================
+st.subheader("Metric Timelines with Anomaly Markers")
+
+fig_cpu = build_metric_chart(
+    filtered_df,
+    anomaly_points,
+    y_col="cpu_percent",
+    title="CPU Usage Timeline",
+    y_axis_title="CPU %"
+)
 st.plotly_chart(fig_cpu, use_container_width=True)
 
-
-# =========================
-# SECONDARY CHARTS
-# =========================
 col_left, col_right = st.columns(2)
 
 with col_left:
-    st.subheader("Memory Usage Over Time")
-    fig_mem = px.line(
+    fig_mem = build_metric_chart(
         filtered_df,
-        x="timestamp",
-        y="memory_percent",
-        title="Memory Usage Timeline"
-    )
-
-    if not anomaly_points.empty:
-        fig_mem.add_scatter(
-            x=anomaly_points["timestamp"],
-            y=anomaly_points["memory_percent"],
-            mode="markers",
-            name="Anomalies"
-        )
-
-    fig_mem.update_layout(
-        xaxis_title="Timestamp",
-        yaxis_title="Memory %"
+        anomaly_points,
+        y_col="memory_percent",
+        title="Memory Usage Timeline",
+        y_axis_title="Memory %"
     )
     st.plotly_chart(fig_mem, use_container_width=True)
 
 with col_right:
-    st.subheader("Disk Usage Over Time")
-    fig_disk = px.line(
+    fig_disk = build_metric_chart(
         filtered_df,
-        x="timestamp",
-        y="disk_percent",
-        title="Disk Usage Timeline"
-    )
-
-    if not anomaly_points.empty:
-        fig_disk.add_scatter(
-            x=anomaly_points["timestamp"],
-            y=anomaly_points["disk_percent"],
-            mode="markers",
-            name="Anomalies"
-        )
-
-    fig_disk.update_layout(
-        xaxis_title="Timestamp",
-        yaxis_title="Disk %"
+        anomaly_points,
+        y_col="disk_percent",
+        title="Disk Usage Timeline",
+        y_axis_title="Disk %"
     )
     st.plotly_chart(fig_disk, use_container_width=True)
+
+
+# =========================
+# NETWORK TIMELINES
+# =========================
+network_cols_available = {
+    "net_sent_delta_mb": "Network Sent Delta (MB)",
+    "net_recv_delta_mb": "Network Received Delta (MB)",
+}
+
+available_network_cols = [col for col in network_cols_available if col in filtered_df.columns]
+
+if available_network_cols:
+    st.subheader("Network Behaviour Around Anomalies")
+
+    net_col1, net_col2 = st.columns(len(available_network_cols))
+
+    for idx, col_name in enumerate(available_network_cols):
+        fig_net = build_metric_chart(
+            filtered_df,
+            anomaly_points,
+            y_col=col_name,
+            title=f"{network_cols_available[col_name]} Timeline",
+            y_axis_title=network_cols_available[col_name]
+        )
+        if len(available_network_cols) == 1:
+            st.plotly_chart(fig_net, use_container_width=True)
+        else:
+            with [net_col1, net_col2][idx]:
+                st.plotly_chart(fig_net, use_container_width=True)
 
 
 # =========================
@@ -297,7 +461,13 @@ if not anomaly_points.empty:
         x=anomaly_points["timestamp"],
         y=anomaly_points["anomaly_score"],
         mode="markers",
-        name="Detected Anomalies"
+        name="Detected Anomalies",
+        text=anomaly_points["explanation"] if "explanation" in anomaly_points.columns else None,
+        hovertemplate=(
+            "<b>Timestamp</b>: %{x}<br>"
+            "<b>Anomaly score</b>: %{y}<br>"
+            "<b>Interpretation</b>: %{text}<extra></extra>"
+        ) if "explanation" in anomaly_points.columns else None
     )
 
 fig_score.update_layout(
@@ -338,6 +508,68 @@ st.plotly_chart(fig_daily, use_container_width=True)
 
 
 # =========================
+# NORMAL VS ANOMALY COMPARISON
+# =========================
+st.subheader("Normal vs Anomaly Behaviour")
+
+comparison_metrics = get_available_columns(
+    filtered_df,
+    [
+        "cpu_percent",
+        "memory_percent",
+        "disk_percent",
+        "net_sent_delta_mb",
+        "net_recv_delta_mb",
+        "uptime_seconds",
+    ]
+)
+
+if len(comparison_metrics) == 0:
+    st.info("Not enough columns available for comparison.")
+else:
+    comparison_df = (
+        filtered_df
+        .groupby("is_anomaly")[comparison_metrics]
+        .mean()
+        .T
+        .reset_index()
+    )
+
+    comparison_df = comparison_df.rename(columns={"index": "metric"})
+
+    if 0 not in comparison_df.columns:
+        comparison_df[0] = None
+    if 1 not in comparison_df.columns:
+        comparison_df[1] = None
+
+    comparison_df = comparison_df.rename(
+        columns={
+            0: "normal_mean",
+            1: "anomaly_mean",
+        }
+    )
+
+    fig_compare = px.bar(
+        comparison_df,
+        x="metric",
+        y=["normal_mean", "anomaly_mean"],
+        barmode="group",
+        title="Average Metric Values: Normal vs Anomaly Rows"
+    )
+    fig_compare.update_layout(
+        xaxis_title="Metric",
+        yaxis_title="Average value"
+    )
+    st.plotly_chart(fig_compare, use_container_width=True)
+
+    st.dataframe(
+        comparison_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# =========================
 # ANOMALIES TABLE
 # =========================
 st.subheader("Detected Anomalies Table")
@@ -346,19 +578,26 @@ anomalies_only = filtered_df[filtered_df["is_anomaly"] == 1].copy()
 
 preferred_columns = [
     "timestamp",
+    "anomaly_score",
+    "anomaly_strength",
+    "top_driver",
+    "explanation",
     "cpu_percent",
     "memory_percent",
     "disk_percent",
-    "net_sent_total_mb",
-    "net_recv_total_mb",
     "net_sent_delta_mb",
     "net_recv_delta_mb",
     "uptime_seconds",
-    "anomaly_score",
+    "cpu_zscore",
+    "memory_zscore",
+    "disk_zscore",
+    "net_sent_zscore",
+    "net_recv_zscore",
+    "uptime_zscore",
     "is_anomaly",
 ]
 
-anomaly_table_columns = [col for col in preferred_columns if col in anomalies_only.columns]
+anomaly_table_columns = get_available_columns(anomalies_only, preferred_columns)
 
 if anomalies_only.empty:
     st.info("No anomalies detected in the selected date range.")
@@ -375,7 +614,23 @@ else:
 # =========================
 st.subheader("Full Results")
 
-full_table_columns = [col for col in preferred_columns if col in filtered_df.columns]
+full_table_columns = get_available_columns(
+    filtered_df,
+    [
+        "timestamp",
+        "anomaly_score",
+        "anomaly_strength",
+        "top_driver",
+        "explanation",
+        "cpu_percent",
+        "memory_percent",
+        "disk_percent",
+        "net_sent_delta_mb",
+        "net_recv_delta_mb",
+        "uptime_seconds",
+        "is_anomaly",
+    ]
+)
 
 st.dataframe(
     filtered_df[full_table_columns].sort_values("timestamp", ascending=False),

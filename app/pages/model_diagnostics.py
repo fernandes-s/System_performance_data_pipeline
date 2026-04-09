@@ -18,9 +18,9 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("Model Diagnostics")
+st.title("🧠 Model Diagnostics")
 st.caption(
-    "Inspect model settings, anomaly scores, saved model artefacts, and anomaly behaviour over time."
+    "Inspect model settings, saved artefacts, anomaly score behaviour, and feature-level interpretation."
 )
 
 
@@ -51,9 +51,15 @@ def safe_file_time(path: Path):
 
 
 def format_dt(dt_value):
-    if dt_value is None:
+    if dt_value is None or pd.isna(dt_value):
         return "Not available"
     return dt_value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_metric(value, decimals=2):
+    if value is None or pd.isna(value):
+        return "N/A"
+    return f"{value:,.{decimals}f}"
 
 
 def infer_prediction_column(df: pd.DataFrame):
@@ -89,11 +95,14 @@ def normalise_prediction_column(df: pd.DataFrame, pred_col: str):
     """
     Normalises prediction output to:
     is_anomaly = True for anomalous observations
+
     Handles:
     - boolean values
     - 1 / 0
     - -1 / 1 from Isolation Forest
     """
+    df = df.copy()
+
     if pred_col is None or pred_col not in df.columns:
         df["is_anomaly"] = False
         return df
@@ -123,7 +132,11 @@ def normalise_prediction_column(df: pd.DataFrame, pred_col: str):
     return df
 
 
-def build_feature_diagnostics(df: pd.DataFrame, feature_cols: list):
+def get_available_columns(df: pd.DataFrame, columns: list[str]) -> list[str]:
+    return [col for col in columns if col in df.columns]
+
+
+def build_feature_diagnostics(df: pd.DataFrame, feature_cols: list[str]):
     rows = []
 
     anomalous_df = df[df["is_anomaly"] == True].copy()
@@ -136,6 +149,11 @@ def build_feature_diagnostics(df: pd.DataFrame, feature_cols: list):
         overall_mean = df[col].mean() if not df[col].dropna().empty else np.nan
         anomaly_mean = anomalous_df[col].mean() if not anomalous_df.empty else np.nan
         normal_mean = normal_df[col].mean() if not normal_df.empty else np.nan
+
+        if pd.notna(normal_mean) and pd.notna(anomaly_mean):
+            difference = anomaly_mean - normal_mean
+        else:
+            difference = np.nan
 
         if pd.notna(overall_mean) and overall_mean != 0 and pd.notna(anomaly_mean):
             deviation_pct = ((anomaly_mean - overall_mean) / overall_mean) * 100
@@ -157,11 +175,46 @@ def build_feature_diagnostics(df: pd.DataFrame, feature_cols: list):
             "overall_mean": round(float(overall_mean), 3) if pd.notna(overall_mean) else None,
             "normal_mean": round(float(normal_mean), 3) if pd.notna(normal_mean) else None,
             "anomaly_mean": round(float(anomaly_mean), 3) if pd.notna(anomaly_mean) else None,
+            "difference_vs_normal": round(float(difference), 3) if pd.notna(difference) else None,
             "deviation_pct": round(float(deviation_pct), 2) if pd.notna(deviation_pct) else None,
             "anomaly_pattern": trend
         })
 
     return pd.DataFrame(rows)
+
+
+def build_zscore_diagnostics(df: pd.DataFrame):
+    zscore_map = {
+        "cpu_zscore": "CPU z-score",
+        "memory_zscore": "Memory z-score",
+        "disk_zscore": "Disk z-score",
+        "net_sent_zscore": "Network sent z-score",
+        "net_recv_zscore": "Network received z-score",
+        "uptime_zscore": "Uptime z-score",
+    }
+
+    available_zscores = [col for col in zscore_map if col in df.columns]
+    if not available_zscores:
+        return pd.DataFrame()
+
+    anomaly_df = df[df["is_anomaly"] == True].copy()
+    if anomaly_df.empty:
+        return pd.DataFrame()
+
+    rows = []
+    for col in available_zscores:
+        mean_abs_z = anomaly_df[col].abs().mean()
+        max_abs_z = anomaly_df[col].abs().max()
+
+        rows.append({
+            "zscore_column": col,
+            "label": zscore_map[col],
+            "mean_absolute_zscore": round(float(mean_abs_z), 3) if pd.notna(mean_abs_z) else None,
+            "max_absolute_zscore": round(float(max_abs_z), 3) if pd.notna(max_abs_z) else None,
+        })
+
+    zscore_df = pd.DataFrame(rows)
+    return zscore_df.sort_values("mean_absolute_zscore", ascending=False)
 
 
 def extract_model_metadata(model, scaler, diagnostics_df):
@@ -209,6 +262,22 @@ def extract_model_metadata(model, scaler, diagnostics_df):
     }
 
     return model_info
+
+
+def build_case_studies(df: pd.DataFrame, max_cases: int = 4) -> pd.DataFrame:
+    if df.empty or "is_anomaly" not in df.columns:
+        return pd.DataFrame()
+
+    anomaly_df = df[df["is_anomaly"] == True].copy()
+    if anomaly_df.empty:
+        return pd.DataFrame()
+
+    sort_ascending = False
+    if "anomaly_score" in anomaly_df.columns:
+        sort_ascending = False
+
+    case_df = anomaly_df.sort_values("anomaly_score", ascending=sort_ascending).head(max_cases).copy()
+    return case_df
 
 
 # =========================
@@ -313,6 +382,7 @@ feature_cols = [
 ]
 
 feature_diag_df = build_feature_diagnostics(diagnostics_df, feature_cols)
+zscore_diag_df = build_zscore_diagnostics(diagnostics_df)
 
 rows_scored = len(diagnostics_df)
 anomaly_count = int(diagnostics_df["is_anomaly"].sum())
@@ -324,6 +394,10 @@ score_max_val = diagnostics_df["anomaly_score"].dropna().max() if "anomaly_score
 latest_timestamp = diagnostics_df["timestamp"].max() if "timestamp" in diagnostics_df.columns else None
 earliest_timestamp = diagnostics_df["timestamp"].min() if "timestamp" in diagnostics_df.columns else None
 
+available_strengths = []
+if "anomaly_strength" in diagnostics_df.columns:
+    available_strengths = sorted(diagnostics_df["anomaly_strength"].dropna().unique().tolist())
+
 
 # =========================
 # SIDEBAR
@@ -332,6 +406,14 @@ st.sidebar.header("Diagnostics Controls")
 
 show_only_anomalies = st.sidebar.checkbox("Show anomalies only", value=False)
 
+selected_strengths = available_strengths
+if available_strengths:
+    selected_strengths = st.sidebar.multiselect(
+        "Anomaly strength",
+        options=available_strengths,
+        default=available_strengths
+    )
+
 max_rows = st.sidebar.slider(
     "Rows to display",
     min_value=10,
@@ -339,6 +421,8 @@ max_rows = st.sidebar.slider(
     value=25,
     step=5
 )
+
+filtered_df = diagnostics_df.copy()
 
 if diagnostics_df["anomaly_score"].dropna().empty:
     filtered_df = diagnostics_df.copy()
@@ -354,11 +438,18 @@ else:
     )
 
     filtered_df = diagnostics_df[
-        diagnostics_df["anomaly_score"].between(selected_score_range[0], selected_score_range[1], inclusive="both")
+        diagnostics_df["anomaly_score"].between(
+            selected_score_range[0],
+            selected_score_range[1],
+            inclusive="both"
+        )
     ].copy()
 
 if show_only_anomalies:
-    filtered_df = filtered_df[filtered_df["is_anomaly"] == True]
+    filtered_df = filtered_df[filtered_df["is_anomaly"] == True].copy()
+
+if show_only_anomalies and "anomaly_strength" in filtered_df.columns and selected_strengths:
+    filtered_df = filtered_df[filtered_df["anomaly_strength"].isin(selected_strengths)].copy()
 
 
 # =========================
@@ -370,6 +461,16 @@ col1.metric("Model", model_info["model_name"])
 col2.metric("Rows Scored", f"{rows_scored:,}")
 col3.metric("Detected Anomalies", f"{anomaly_count:,}")
 col4.metric("Anomaly Rate", f"{anomaly_rate:.2f}%")
+
+if "anomaly_strength" in diagnostics_df.columns:
+    strong_count = int((diagnostics_df["anomaly_strength"] == "strong").sum())
+    moderate_count = int((diagnostics_df["anomaly_strength"] == "moderate").sum())
+    weak_count = int((diagnostics_df["anomaly_strength"] == "weak").sum())
+
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Strong Anomalies", f"{strong_count:,}")
+    s2.metric("Moderate Anomalies", f"{moderate_count:,}")
+    s3.metric("Weak Anomalies", f"{weak_count:,}")
 
 
 # =========================
@@ -478,7 +579,13 @@ if "timestamp" in diagnostics_df.columns and diagnostics_df["anomaly_score"].not
             x=anomaly_points["timestamp"],
             y=anomaly_points["anomaly_score"],
             mode="markers",
-            name="Detected anomalies"
+            name="Detected anomalies",
+            text=anomaly_points["top_driver"] if "top_driver" in anomaly_points.columns else None,
+            hovertemplate=(
+                "<b>Timestamp</b>: %{x}<br>"
+                "<b>Anomaly score</b>: %{y}<br>"
+                "<b>Driver</b>: %{text}<extra></extra>"
+            ) if "top_driver" in anomaly_points.columns else None
         )
 
     st.plotly_chart(fig_time, use_container_width=True)
@@ -505,6 +612,37 @@ if "timestamp" in diagnostics_df.columns:
         title="Detected Anomalies per Day"
     )
     st.plotly_chart(fig_daily, use_container_width=True)
+
+
+# =========================
+# DRIVER DISTRIBUTION
+# =========================
+st.subheader("Most Common Drivers of Detection")
+
+if "top_driver" not in diagnostics_df.columns:
+    st.info("Driver information is not available in the saved output yet.")
+else:
+    driver_counts = (
+        diagnostics_df[diagnostics_df["is_anomaly"] == True]["top_driver"]
+        .value_counts()
+        .reset_index()
+    )
+    driver_counts.columns = ["top_driver", "count"]
+
+    if driver_counts.empty:
+        st.info("No anomaly drivers available for the current run.")
+    else:
+        fig_driver = px.bar(
+            driver_counts.head(10),
+            x="top_driver",
+            y="count",
+            title="Most Common Anomaly Drivers"
+        )
+        fig_driver.update_layout(
+            xaxis_title="Driver",
+            yaxis_title="Count"
+        )
+        st.plotly_chart(fig_driver, use_container_width=True)
 
 
 # =========================
@@ -548,6 +686,73 @@ if not feature_diag_df.empty:
 
 
 # =========================
+# Z-SCORE DIAGNOSTICS
+# =========================
+st.subheader("Feature Influence Based on Saved Z-Scores")
+
+if zscore_diag_df.empty:
+    st.info("Z-score diagnostics are not available in the saved results yet.")
+else:
+    st.dataframe(zscore_diag_df, use_container_width=True, hide_index=True)
+
+    fig_zscore = px.bar(
+        zscore_diag_df,
+        x="label",
+        y="mean_absolute_zscore",
+        title="Average Absolute Z-Score in Anomalous Rows"
+    )
+    fig_zscore.update_layout(
+        xaxis_title="Feature",
+        yaxis_title="Mean absolute z-score"
+    )
+    st.plotly_chart(fig_zscore, use_container_width=True)
+
+
+# =========================
+# CASE STUDIES
+# =========================
+st.subheader("Example High-Priority Anomalies")
+
+case_studies = build_case_studies(filtered_df, max_cases=4)
+
+if case_studies.empty:
+    st.info("No anomaly case studies available for the current filter.")
+else:
+    for i, (_, row) in enumerate(case_studies.iterrows(), start=1):
+        with st.container(border=True):
+            st.markdown(f"**Case Study {i}**")
+            st.write(f"**Timestamp:** {row.get('timestamp', 'N/A')}")
+
+            if "anomaly_score" in row.index and pd.notna(row["anomaly_score"]):
+                st.write(f"**Anomaly score:** {row['anomaly_score']:.6f}")
+
+            if "anomaly_strength" in row.index:
+                st.write(f"**Strength:** {row['anomaly_strength']}")
+
+            if "top_driver" in row.index:
+                st.write(f"**Main driver:** {row['top_driver']}")
+
+            if "explanation" in row.index:
+                st.write(f"**Interpretation:** {row['explanation']}")
+
+            c1, c2, c3 = st.columns(3)
+            if "cpu_percent" in row.index:
+                c1.metric("CPU %", format_metric(row["cpu_percent"], 2))
+            if "memory_percent" in row.index:
+                c2.metric("Memory %", format_metric(row["memory_percent"], 2))
+            if "disk_percent" in row.index:
+                c3.metric("Disk %", format_metric(row["disk_percent"], 2))
+
+            c4, c5, c6 = st.columns(3)
+            if "net_sent_delta_mb" in row.index:
+                c4.metric("Net Sent Δ MB", format_metric(row["net_sent_delta_mb"], 3))
+            if "net_recv_delta_mb" in row.index:
+                c5.metric("Net Recv Δ MB", format_metric(row["net_recv_delta_mb"], 3))
+            if "uptime_seconds" in row.index:
+                c6.metric("Uptime Sec", format_metric(row["uptime_seconds"], 0))
+
+
+# =========================
 # INTERPRETATION / INSIGHTS
 # =========================
 st.subheader("Diagnostic Insights")
@@ -572,14 +777,29 @@ if latest_timestamp is not None and earliest_timestamp is not None:
     )
 
 if not feature_diag_df.empty:
-    strongest_feature = feature_diag_df["deviation_pct"].abs().idxmax()
-    strongest_row = feature_diag_df.loc[strongest_feature]
+    strongest_idx = feature_diag_df["deviation_pct"].abs().idxmax()
+    strongest_row = feature_diag_df.loc[strongest_idx]
 
     if pd.notna(strongest_row["deviation_pct"]):
         insight_lines.append(
-            f"The strongest difference between anomalous and normal observations was seen in "
-            f"`{strongest_row['feature']}`, where anomalous records were described as "
-            f"'{strongest_row['anomaly_pattern']}' compared with the overall behaviour."
+            f"The strongest average difference between anomalous and normal observations was seen in "
+            f"`{strongest_row['feature']}`, where anomalous records were '{strongest_row['anomaly_pattern']}'."
+        )
+
+if not zscore_diag_df.empty:
+    top_zscore_row = zscore_diag_df.iloc[0]
+    insight_lines.append(
+        f"The most influential saved z-score feature was `{top_zscore_row['label']}`, "
+        f"with an average absolute z-score of {top_zscore_row['mean_absolute_zscore']:.3f} across anomalous rows."
+    )
+
+if "top_driver" in diagnostics_df.columns:
+    driver_counts = diagnostics_df[diagnostics_df["is_anomaly"] == True]["top_driver"].value_counts()
+    if not driver_counts.empty:
+        top_driver = driver_counts.index[0]
+        top_driver_count = int(driver_counts.iloc[0])
+        insight_lines.append(
+            f"The most common detected behaviour was '{top_driver}', appearing {top_driver_count:,} times."
         )
 
 for line in insight_lines:
@@ -593,27 +813,33 @@ st.subheader("Highest Priority Anomalous Observations")
 
 top_anomalies = (
     filtered_df[filtered_df["is_anomaly"] == True]
-    .sort_values("anomaly_score", ascending=True)
+    .sort_values("anomaly_score", ascending=False)
     .head(max_rows)
     .copy()
 )
 
-# For Isolation Forest, lower scores are usually more abnormal.
-# If your saved scores are reversed, change ascending=True to False.
-
 display_cols = [
     "timestamp",
+    "anomaly_score",
+    "anomaly_strength",
+    "top_driver",
+    "explanation",
     "cpu_percent",
     "memory_percent",
     "disk_percent",
     "net_sent_delta_mb",
     "net_recv_delta_mb",
     "uptime_seconds",
-    "anomaly_score",
+    "cpu_zscore",
+    "memory_zscore",
+    "disk_zscore",
+    "net_sent_zscore",
+    "net_recv_zscore",
+    "uptime_zscore",
     "is_anomaly"
 ]
 
-available_display_cols = [col for col in display_cols if col in top_anomalies.columns]
+available_display_cols = get_available_columns(top_anomalies, display_cols)
 
 if top_anomalies.empty:
     st.info("No anomalous rows found for the current filter.")
