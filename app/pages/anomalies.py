@@ -234,6 +234,8 @@ anomaly_points = filtered_df[filtered_df["is_anomaly"] == 1].copy()
 # =========================
 # KPI CARDS
 # =========================
+st.subheader("Overview")
+
 total_records = len(filtered_df)
 total_anomalies = int(filtered_df["is_anomaly"].sum())
 anomaly_rate = (total_anomalies / total_records * 100) if total_records > 0 else 0
@@ -246,17 +248,25 @@ strong_count = int((anomaly_points["anomaly_strength"] == "strong").sum()) if "a
 moderate_count = int((anomaly_points["anomaly_strength"] == "moderate").sum()) if "anomaly_strength" in anomaly_points.columns else 0
 weak_count = int((anomaly_points["anomaly_strength"] == "weak").sum()) if "anomaly_strength" in anomaly_points.columns else 0
 
+latest_timestamp_display = (
+    latest_timestamp.strftime("%Y-%m-%d %H:%M")
+    if pd.notna(latest_timestamp) else "N/A"
+)
+
+# first row
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Records", format_metric(total_records))
 col2.metric("Detected Anomalies", format_metric(total_anomalies))
 col3.metric("Anomaly Rate", f"{anomaly_rate:.2f}%")
-col4.metric("Latest Timestamp", str(latest_timestamp))
+col4.metric("Latest Record", latest_timestamp_display)
 
-if "anomaly_strength" in filtered_df.columns:
-    col5, col6, col7 = st.columns(3)
+# second row - SAME 4 COLUMN STRUCTURE
+if "anomaly_strength" in filtered_df.columns and total_anomalies > 0:
+    col5, col6, col7, col8 = st.columns(4)
     col5.metric("Strong Anomalies", format_metric(strong_count))
     col6.metric("Moderate Anomalies", format_metric(moderate_count))
     col7.metric("Weak Anomalies", format_metric(weak_count))
+    col8.empty()
 
 st.divider()
 

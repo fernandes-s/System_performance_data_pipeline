@@ -455,22 +455,24 @@ if show_only_anomalies and "anomaly_strength" in filtered_df.columns and selecte
 # =========================
 # TOP METRICS
 # =========================
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric("Model", model_info["model_name"])
-col2.metric("Rows Scored", f"{rows_scored:,}")
-col3.metric("Detected Anomalies", f"{anomaly_count:,}")
-col4.metric("Anomaly Rate", f"{anomaly_rate:.2f}%")
+top_row = st.columns(4)
+top_row[0].metric("Model", model_info["model_name"])
+top_row[1].metric("Rows Scored", f"{rows_scored:,}")
+top_row[2].metric("Detected Anomalies", f"{anomaly_count:,}")
+top_row[3].metric("Anomaly Rate", f"{anomaly_rate:.2f}%")
 
 if "anomaly_strength" in diagnostics_df.columns:
-    strong_count = int((diagnostics_df["anomaly_strength"] == "strong").sum())
-    moderate_count = int((diagnostics_df["anomaly_strength"] == "moderate").sum())
-    weak_count = int((diagnostics_df["anomaly_strength"] == "weak").sum())
+    anomaly_only_df = diagnostics_df[diagnostics_df["is_anomaly"] == True].copy()
 
-    s1, s2, s3 = st.columns(3)
-    s1.metric("Strong Anomalies", f"{strong_count:,}")
-    s2.metric("Moderate Anomalies", f"{moderate_count:,}")
-    s3.metric("Weak Anomalies", f"{weak_count:,}")
+    strong_count = int((anomaly_only_df["anomaly_strength"] == "strong").sum())
+    moderate_count = int((anomaly_only_df["anomaly_strength"] == "moderate").sum())
+    weak_count = int((anomaly_only_df["anomaly_strength"] == "weak").sum())
+
+    second_row = st.columns(4)
+    second_row[0].metric("Strong Anomalies", f"{strong_count:,}")
+    second_row[1].metric("Moderate Anomalies", f"{moderate_count:,}")
+    second_row[2].metric("Weak Anomalies", f"{weak_count:,}")
+    second_row[3].empty()
 
 
 # =========================
