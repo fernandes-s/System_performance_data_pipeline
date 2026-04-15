@@ -6,6 +6,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import sqlite3
 import pandas as pd
+import json
+from datetime import datetime
 
 from models.preprocessing import clean_metrics
 from models.anomaly_model import run_anomaly_pipeline, save_model, save_scaler
@@ -61,8 +63,9 @@ def save_anomaly_results(
     table_name: str = "anomaly_results"
 ):
     """
-    Saves anomaly results into a separate SQLite table.
+    Saves anomaly results into the existing SQLite table.
     Replaces the table on each run so results stay consistent with the latest model run.
+    The table itself is already part of the DB structure from create_db.py.
     """
     output_cols = [
         "id",
@@ -91,7 +94,59 @@ def save_anomaly_results(
     save_df = results_df[available_cols].copy()
     save_df["timestamp"] = save_df["timestamp"].astype(str)
 
+    # Keeps latest model results only
     save_df.to_sql(table_name, conn, if_exists="replace", index=False)
+
+
+def save_training_run(
+    conn,
+    model_name: str,
+    raw_rows: int,
+    cleaned_rows: int,
+    anomalies_detected: int,
+    contamination: float,
+    score_min: float | None,
+    score_max: float | None,
+    features_used: list[str],
+    notes: str = ""
+) -> int:
+    """
+    Saves one row into training_runs for model run tracking.
+    """
+    removed_rows = raw_rows - cleaned_rows
+
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO training_runs (
+            trained_at,
+            model_name,
+            raw_rows,
+            cleaned_rows,
+            removed_rows,
+            anomalies_detected,
+            contamination,
+            score_min,
+            score_max,
+            features_used,
+            notes
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        model_name,
+        raw_rows,
+        cleaned_rows,
+        removed_rows,
+        anomalies_detected,
+        contamination,
+        score_min,
+        score_max,
+        json.dumps(features_used),
+        notes
+    ))
+
+    conn.commit()
+    return cursor.lastrowid
 
 
 # =========================
@@ -157,7 +212,8 @@ def print_run_summary(
     raw_df: pd.DataFrame,
     clean_df: pd.DataFrame,
     results_df: pd.DataFrame,
-    feature_cols: list[str]
+    feature_cols: list[str],
+    run_id: int
 ):
     """
     Prints a stronger training summary with anomaly interpretation.
@@ -170,6 +226,7 @@ def print_run_summary(
 
     print("\n=== MODEL TRAINING SUMMARY ===")
     print(f"Database path: {DB_PATH}")
+    print(f"Training run ID: {run_id}")
     print(f"Raw rows loaded: {total_rows}")
     print(f"Rows after cleaning: {clean_rows}")
     print(f"Rows removed during cleaning: {removed_rows}")
@@ -193,6 +250,7 @@ def print_run_summary(
         print_example_case_studies(anomaly_df, top_n=3)
 
     print(f"\nResults saved to table: anomaly_results")
+    print(f"Training metadata saved to table: training_runs")
     print(f"Model saved to: {MODEL_PATH}")
     print(f"Scaler saved to: {SCALER_PATH}")
     print("==============================\n")
@@ -226,10 +284,12 @@ def main():
             raise ValueError("No rows left after cleaning. Check your cleaning rules or raw data quality.")
 
         # 3. Train model and score anomalies
+        contamination = 0.02
+
         results_df, model, scaler, feature_cols = run_anomaly_pipeline(
             df=df_clean,
             feature_cols=None,      # uses DEFAULT_FEATURES from anomaly_model.py
-            contamination=0.02,
+            contamination=contamination,
             random_state=42,
             n_estimators=200
         )
@@ -237,12 +297,30 @@ def main():
         # 4. Save anomaly results back to SQLite
         save_anomaly_results(conn, results_df, table_name="anomaly_results")
 
-        # 5. Save artefacts
+        # 5. Save training run metadata
+        anomaly_df = get_anomaly_only_df(results_df)
+        score_min = float(results_df["anomaly_score"].min()) if not results_df.empty else None
+        score_max = float(results_df["anomaly_score"].max()) if not results_df.empty else None
+
+        run_id = save_training_run(
+            conn=conn,
+            model_name="IsolationForest",
+            raw_rows=len(df),
+            cleaned_rows=len(df_clean),
+            anomalies_detected=len(anomaly_df),
+            contamination=contamination,
+            score_min=score_min,
+            score_max=score_max,
+            features_used=feature_cols,
+            notes="Main training run"
+        )
+
+        # 6. Save artefacts
         save_model(model, MODEL_PATH)
         save_scaler(scaler, SCALER_PATH)
 
-        # 6. Print summary
-        print_run_summary(df, df_clean, results_df, feature_cols)
+        # 7. Print summary
+        print_run_summary(df, df_clean, results_df, feature_cols, run_id)
 
     finally:
         conn.close()
