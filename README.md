@@ -1,26 +1,50 @@
 # System Performance Data Pipeline
 
-A Python-based system monitoring and anomaly detection project that collects performance metrics, stores them in SQLite, exports daily snapshots, and presents the results through a Streamlit dashboard.
+A Python-based end-to-end monitoring project that collects system performance metrics, stores them in a SQLite database, applies anomaly detection to identify unusual behaviour, and presents the results through an interactive Streamlit dashboard.
+
+---
 
 ## Project Overview
 
-This project was built as a final year computing project to demonstrate the design of a small end-to-end data pipeline for system monitoring. It automates the collection of system metrics, stores the data locally, prepares it for analysis, and applies anomaly detection to identify unusual behaviour in system performance over time.
+This project was developed as a final-year computing project to demonstrate the design and implementation of a small but complete data pipeline for system monitoring.
 
-The project combines data collection, storage, preprocessing, modelling, and dashboarding in one workflow.
+The pipeline automates the collection of system-level performance data, stores it locally, prepares it for analysis, applies an unsupervised anomaly detection model, and displays both historical trends and anomaly-related insights in a dashboard.
 
-## Features
+Rather than focusing only on visualisation or only on machine learning, the project combines data collection, storage, preprocessing, modelling, persistence of outputs, and dashboard integration in one workflow.
 
-- Automated system metric collection
-- SQLite database storage
-- Daily metric exports to CSV
+---
+
+## Objectives
+
+The main objectives of the project were to:
+
+- collect system performance data automatically at regular intervals
+- store the data in a structured local database
+- export daily snapshots for backup and external analysis
+- clean and prepare the data for modelling
+- detect unusual system behaviour using anomaly detection
+- build an interactive dashboard to support monitoring and interpretation
+- demonstrate a practical end-to-end data pipeline using Python
+
+---
+
+## Key Features
+
+- Automated system metric collection using Python and `psutil`
+- Local storage of raw metrics in SQLite
+- Daily CSV export of collected records
 - Data cleaning and preprocessing pipeline
-- Isolation Forest anomaly detection
-- Streamlit dashboard for monitoring and analysis
-- Modular project structure for easier maintenance and extension
+- Isolation Forest anomaly detection model
+- Saved model artefacts using `joblib`
+- Anomaly results written back into the database
+- Multi-page Streamlit dashboard for monitoring and analysis
+- Modular project structure for maintainability and extension
+
+---
 
 ## Metrics Collected
 
-The pipeline currently collects the following system-level metrics:
+The pipeline collects the following system-level metrics:
 
 - CPU usage percentage
 - Memory usage percentage
@@ -30,7 +54,9 @@ The pipeline currently collects the following system-level metrics:
 - Network sent delta between collections (MB)
 - Network received delta between collections (MB)
 - System uptime in seconds
-- Timestamp for each reading
+- Timestamp of each reading
+
+---
 
 ## Project Structure
 
@@ -38,22 +64,21 @@ The pipeline currently collects the following system-level metrics:
 System_performance_data_pipeline/
 ├── app/
 │   ├── main.py
-│   ├── utils/
-│   │   ├── db.py
-│   │   └── helpers.py
-│   └── pages/
-│       ├── anomalies.py
-│       ├── model_diagnostics.py
-│       └── system_info.py
+│   ├── pages/
+│   │   ├── anomalies.py
+│   │   ├── model_diagnostics.py
+│   │   └── system_info.py
+│   └── utils/
+│       ├── db.py
+│       └── helpers.py
 ├── artifacts/
 │   └── models/
 │       ├── isolation_forest_model.joblib
 │       └── scaler.joblib
 ├── data/
-│   ├── exports/
+│   ├── daily_exports/
 │   └── raw/
 │       └── system_metrics.db
-├── notebooks/
 ├── scripts/
 │   ├── collect_metrics.py
 │   ├── create_db.py
@@ -65,35 +90,93 @@ System_performance_data_pipeline/
 │       ├── anomaly_model.py
 │       ├── preprocessing.py
 │       └── train_model.py
+├── task_scheduler/
 ├── requirements.txt
 └── README.md
 ```
+
+---
 
 ## How the Pipeline Works
 
 ### 1. Data Collection
 
-The pipeline collects system performance metrics at regular intervals using Python. These metrics are gathered from the local machine and inserted into a SQLite database.
+System performance metrics are collected from the local machine using Python. The collection process captures real-time measurements such as CPU usage, memory usage, disk usage, network traffic, and system uptime.
 
 ### 2. Data Storage
 
-Collected metrics are stored in the `metrics` table inside `data/raw/system_metrics.db`. SQLite was used because it is lightweight, simple to manage, and suitable for a local monitoring project.
+The collected metrics are stored in a SQLite database located at:
+
+```text
+data/raw/system_metrics.db
+```
+
+The main raw data is stored in the `metrics` table. SQLite was selected because it is lightweight, portable, and appropriate for a local monitoring pipeline.
 
 ### 3. Daily Export
 
-A daily export script saves collected metrics into CSV format for backup and external analysis.
+A daily export script saves collected records into CSV format. This provides a simple backup mechanism and also allows the data to be reviewed outside the dashboard or database environment.
 
 ### 4. Data Preprocessing
 
-Before modelling, the data is cleaned and filtered to remove missing values, unrealistic values, and invalid network readings.
+Before training the model, the raw data is cleaned and filtered. This stage includes:
+
+- timestamp filtering
+- removal of missing values
+- handling of invalid or unrealistic metric ranges
+- filtering of problematic network readings
+- removal of selected outliers
+
+This step is important because raw monitoring data can contain noise and misleading values that reduce the quality of anomaly detection.
 
 ### 5. Anomaly Detection
 
-The project uses an Isolation Forest model to identify unusual system behaviour. The model is trained on historical system metrics and saves anomaly results back into the database.
+The project uses an Isolation Forest model to identify observations that behave differently from the normal system pattern.
 
-### 6. Dashboarding
+The modelling pipeline includes:
 
-A Streamlit dashboard displays key metrics, trends, and anomaly-related information in an interactive format.
+- feature selection
+- scaling with `StandardScaler`
+- anomaly scoring
+- classification of records as normal or anomalous
+- saving model artefacts for reuse
+- writing anomaly results back into SQLite
+
+Because this is an unsupervised anomaly detection task, the model is used to highlight unusual system behaviour rather than to make supervised accuracy claims.
+
+### 6. Dashboard Integration
+
+The final stage of the pipeline is a Streamlit dashboard that presents:
+
+- system performance trends
+- recent metric behaviour
+- anomaly summaries
+- model diagnostics
+- supporting system and database information
+
+This allows the project to move from raw collected data to an interpretable user-facing monitoring tool.
+
+---
+
+## Dashboard Pages
+
+### Main Dashboard
+
+The main dashboard provides a high-level overview of the dataset and recent system activity. It is designed to summarise the current state of the pipeline and recent trends in key metrics.
+
+### Anomalies Page
+
+The anomalies page focuses on records flagged by the anomaly detection pipeline. It helps users inspect unusual behaviour and review anomaly-related summaries from the stored model results.
+
+### System Info Page
+
+The system info page presents supporting operational information such as latest readings, environment details, and pipeline-related monitoring context.
+
+### Model Diagnostics Page
+
+The model diagnostics page is used to inspect saved model artefacts, anomaly score behaviour, and supporting details related to the modelling stage.
+
+---
 
 ## Technologies Used
 
@@ -103,8 +186,10 @@ A Streamlit dashboard displays key metrics, trends, and anomaly-related informat
 - Scikit-learn
 - Joblib
 - Streamlit
-- Psutil
 - Plotly
+- Psutil
+
+---
 
 ## Installation
 
@@ -121,6 +206,8 @@ Install the required packages:
 pip install -r requirements.txt
 ```
 
+---
+
 ## How to Run the Project
 
 ### Step 1: Create the database
@@ -135,7 +222,7 @@ python scripts/create_db.py
 python scripts/collect_metrics.py
 ```
 
-This script can also be scheduled to run automatically at fixed intervals using Task Scheduler.
+This script can also be scheduled to run automatically at fixed intervals using Windows Task Scheduler.
 
 ### Step 3: Export daily metrics
 
@@ -149,83 +236,75 @@ python scripts/export_daily.py
 python src/models/train_model.py
 ```
 
-### Step 5: Run the dashboard
+This step cleans the data, builds the feature matrix, scales the selected features, trains the Isolation Forest model, saves the model artefacts, and writes anomaly results into the database.
+
+### Step 5: Launch the dashboard
 
 ```bash
 streamlit run app/main.py
 ```
 
-## Dashboard Pages
+---
 
-### Main Dashboard
+## Outputs Generated
 
-The main dashboard provides a high-level overview of the latest system activity and recent trends.
+The project produces several outputs during execution:
 
-### Anomalies Page
+- raw system metrics stored in SQLite
+- daily CSV export files
+- trained model artefacts in `artifacts/models/`
+- anomaly detection results saved to the database
+- interactive dashboard views for monitoring and interpretation
 
-The anomalies page is intended to show unusual system behaviour and anomaly-related summaries.
+---
 
-### System Info Page
+## Design Decisions
 
-This page focuses on data collection consistency, database records, and system monitoring information.
+A number of design choices were made to keep the project practical, lightweight, and easy to maintain:
 
-### Model Diagnostics Page
+- **SQLite** was chosen for simple local storage without requiring a separate database server.
+- **Streamlit** was used to build a fast and clear dashboard interface.
+- **Isolation Forest** was selected because it is suitable for unsupervised anomaly detection where labelled anomaly data is not available.
+- **Modular file structure** was used to separate data collection, preprocessing, modelling, and dashboard logic.
+- **Saved model artefacts** were included to support reuse and reproducibility.
 
-This page is used to inspect model-related results, anomaly scoring behaviour, and supporting diagnostics.
+---
 
-## Current Stage of the Project
+## Limitations
 
-The project currently includes:
+This project has some important limitations:
 
-- working metric collection
-- local SQLite storage
-- export functionality
-- preprocessing and anomaly detection code
-- saved model artefacts
-- a multi-page Streamlit dashboard structure
+- the anomaly detection model is unsupervised, so flagged anomalies are unusual observations rather than confirmed faults
+- the project is designed for local system monitoring and does not currently support distributed monitoring across multiple machines
+- system behaviour can vary depending on usage patterns, meaning anomaly results should always be interpreted in context
+- the project does not use labelled ground truth data for formal supervised evaluation
 
-The project is currently in the final integration and presentation stage. The main remaining work is focused on polishing, aligning documentation with the latest codebase, and making sure all dashboard pages are fully connected to real model outputs.
+These limitations are expected in a project of this scope and were considered as part of the design.
 
-## Challenges Faced
-
-Some of the main challenges in the project included:
-
-- designing a clean project structure as the project expanded
-- managing paths across scripts, app pages, and data folders
-- handling network counter resets and invalid values
-- moving from a simple dashboard to a modular multi-page app
-- integrating machine learning output into a monitoring dashboard
+---
 
 ## Future Improvements
 
-Possible improvements for the project include:
+Possible future improvements include:
 
-- connecting all dashboard pages directly to final model outputs
-- adding more robust evaluation metrics for anomaly detection
-- improving model explainability
-- adding automated tests
-- deploying the dashboard online
-- storing model metadata and training logs
-- adding alerting functionality for critical anomalies
+- support for monitoring multiple machines
+- configurable collection intervals through a settings file
+- automated alerting for high-risk anomalies
+- improved feature engineering for model performance
+- stronger model comparison across multiple unsupervised methods
+- deployment of the dashboard and pipeline in a cloud environment
 
-## Learning Outcomes
+---
 
-This project helped develop skills in:
+## Conclusion
 
-- data pipeline design
-- data collection and automation
-- database handling with SQLite
-- preprocessing and feature preparation
-- anomaly detection with machine learning
-- dashboard development with Streamlit
-- structuring and documenting a complete technical project
+This project demonstrates the design of a complete data pipeline for local system performance monitoring. It moves from raw metric collection to storage, preprocessing, anomaly detection, and dashboard presentation in one integrated workflow.
+
+The main value of the project is not only the anomaly model itself, but the full pipeline that supports data collection, analysis, persistence of outputs, and interpretation through an accessible dashboard.
+
+---
 
 ## Author
 
-Daniel Fernandes
-
-## Repository
-
-This project is available on GitHub:
-
-`https://github.com/fernandes-s/System_performance_data_pipeline`
+**Daniel Fernandes**
+BSc (Hons) Computing Big Data & Data Analytics
