@@ -5,7 +5,7 @@ from utils.config import (
     DEFAULT_RECENT_DAYS,
     METRICS_TABLE,
 )
-from utils.database import run_query, table_exists
+from utils.db import run_query, table_exists
 
 
 def get_table_names() -> list[str]:
