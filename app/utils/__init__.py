@@ -14,7 +14,7 @@ This package contains reusable helpers for:
 
 from .config import DB_PATH, METRICS_TABLE, ANOMALY_TABLE
 
-from .database import get_connection, run_query
+from .db import get_connection, run_query
 
 from .queries import (
     get_table_names,
@@ -40,7 +40,7 @@ from .metrics import (
     calculate_system_health,
 )
 
-from .anomalies import (
+from .anomaly import (
     prepare_features,
     get_anomaly_count,
     get_anomaly_rate,
