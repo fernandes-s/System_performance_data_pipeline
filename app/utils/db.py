@@ -1,141 +1,84 @@
-from pathlib import Path
 import sqlite3
+from contextlib import contextmanager
 
 import pandas as pd
-import streamlit as st
+
+from utils.config import DB_PATH
 
 
-# =========================
-# PATHS
-# =========================
-# db.py is inside app/utils/
-# parents[2] goes back to project root
-BASE_DIR = Path(__file__).resolve().parents[2]
-DB_PATH = BASE_DIR / "data" / "raw" / "system_metrics.db"
-
-
-# =========================
-# CONNECTION
-# =========================
+@contextmanager
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    """
+    Create and safely close a SQLite connection.
+
+    Yields:
+        sqlite3.Connection: Active database connection.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
-def database_exists():
+def database_exists() -> bool:
+    """
+    Check whether the SQLite database file exists.
+
+    Returns:
+        bool: True if the database file exists, otherwise False.
+    """
     return DB_PATH.exists()
 
 
-def get_db_path():
-    return DB_PATH
-
-
-# =========================
-# DATA LOADING
-# =========================
-@st.cache_data
-def load_data():
-    conn = get_connection()
-    query = """
-        SELECT
-            id,
-            timestamp,
-            cpu_percent,
-            memory_percent,
-            disk_percent,
-            net_sent_total_mb,
-            net_recv_total_mb,
-            net_sent_delta_mb,
-            net_recv_delta_mb,
-            uptime_seconds
-        FROM metrics
-        ORDER BY timestamp ASC
+def run_query(query: str, params: tuple | None = None) -> pd.DataFrame:
     """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+    Run a SELECT query and return the results as a DataFrame.
 
-    if not df.empty:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-        df = df.dropna(subset=["timestamp"]).copy()
+    Args:
+        query (str): SQL query to execute.
+        params (tuple | None): Optional query parameters.
 
-    return df
+    Returns:
+        pd.DataFrame: Query results.
+    """
+    params = params or ()
 
-
-# =========================
-# SUMMARY HELPERS
-# =========================
-def get_latest_timestamp(df):
-    if df.empty:
-        return None
-    return df["timestamp"].max()
+    with get_connection() as conn:
+        return pd.read_sql_query(query, conn, params=params)
 
 
-def format_latest_timestamp(timestamp):
-    if timestamp is None:
-        return "N/A"
-    return timestamp.strftime("%d %b %Y, %H:%M:%S")
+def execute_statement(query: str, params: tuple | None = None) -> None:
+    """
+    Execute a non-SELECT SQL statement such as INSERT, UPDATE, or DELETE.
+
+    Args:
+        query (str): SQL statement to execute.
+        params (tuple | None): Optional query parameters.
+    """
+    params = params or ()
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        conn.commit()
 
 
-def get_summary_metrics(df):
-    if df.empty:
-        return {
-            "latest_timestamp": None,
-            "latest_timestamp_display": "N/A",
-            "total_records": 0,
-            "avg_cpu": 0.0,
-            "avg_memory": 0.0,
-        }
+def table_exists(table_name: str) -> bool:
+    """
+    Check whether a table exists in the SQLite database.
 
-    latest_timestamp = get_latest_timestamp(df)
+    Args:
+        table_name (str): Name of the table.
 
-    return {
-        "latest_timestamp": latest_timestamp,
-        "latest_timestamp_display": format_latest_timestamp(latest_timestamp),
-        "total_records": len(df),
-        "avg_cpu": df["cpu_percent"].mean(),
-        "avg_memory": df["memory_percent"].mean(),
-    }
-
-
-def get_recent_rows(df, n=20):
-    if df.empty:
-        return df.copy()
-
-    recent_df = (
-        df.sort_values("timestamp", ascending=False)
-          .head(n)
-          .copy()
-    )
-
-    recent_df["timestamp"] = recent_df["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
-    return recent_df
-
-
-def get_recent_window(df, days=7):
-    if df.empty:
-        return df.copy()
-
-    latest_timestamp = df["timestamp"].max()
-    cutoff = latest_timestamp - pd.Timedelta(days=days)
-
-    recent_df = df[df["timestamp"] >= cutoff].copy()
-
-    if recent_df.empty:
-        return df.copy()
-
-    return recent_df
-
-
-def get_first_timestamp(df):
-    if df.empty:
-        return None
-    return df["timestamp"].min()
-
-
-def get_row_count(df):
-    return len(df)
-
-
-def get_time_range(df):
-    if df.empty:
-        return None, None
-    return df["timestamp"].min(), df["timestamp"].max()
+    Returns:
+        bool: True if the table exists, otherwise False.
+    """
+    query = """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table' AND name = ?
+    """
+    result = run_query(query, (table_name,))
+    return not result.empty
