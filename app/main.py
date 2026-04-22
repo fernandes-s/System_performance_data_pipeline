@@ -1,17 +1,35 @@
-from pathlib import Path
-import sqlite3
-
-import pandas as pd
 import streamlit as st
+import pandas as pd
 
-from utils.db import (
-    database_exists,
-    get_recent_window,
-    get_summary_metrics,
-    load_data,
+from utils.queries import (
+    load_metrics,
+    load_anomaly_results,
+    load_recent_metrics,
 )
-from utils.charts import make_line_chart
-
+from utils.metrics import (
+    get_summary_metrics,
+    get_recent_window,
+)
+from utils.anomaly import (
+    get_anomaly_count,
+    get_anomaly_rate,
+    get_anomaly_rows,
+    get_top_anomaly_drivers,
+)
+from utils.charts import make_metric_line_chart
+from utils.formatters import (
+    format_timestamp,
+    format_large_number,
+    format_percentage,
+)
+from utils.ui_helpers import (
+    section_header,
+    show_empty_state,
+    show_chart_or_empty,
+    show_dataframe_preview,
+    four_column_kpis,
+)
+from utils.db import database_exists
 
 # =========================
 # PAGE CONFIG
@@ -19,290 +37,186 @@ from utils.charts import make_line_chart
 st.set_page_config(
     page_title="System Metrics Dashboard",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
 )
 
 
-# =========================
-# PATHS
-# =========================
-BASE_DIR = Path(__file__).resolve().parents[1]
-DB_PATH = BASE_DIR / "data" / "raw" / "system_metrics.db"
-ANOMALY_TABLE = "anomaly_results"
-
-
-# =========================
-# DATABASE HELPERS
-# =========================
-def get_connection():
-    return sqlite3.connect(DB_PATH)
-
-
-@st.cache_data(ttl=60)
-def get_table_names():
-    conn = get_connection()
-    query = "SELECT name FROM sqlite_master WHERE type='table';"
-    tables = pd.read_sql_query(query, conn)
-    conn.close()
-    return tables["name"].tolist()
-
-
-@st.cache_data(ttl=60)
-def load_anomaly_results():
-    if not DB_PATH.exists():
-        return pd.DataFrame()
-
-    table_names = get_table_names()
-    if ANOMALY_TABLE not in table_names:
-        return pd.DataFrame()
-
-    conn = get_connection()
-    query = f"""
-        SELECT *
-        FROM {ANOMALY_TABLE}
-        ORDER BY timestamp ASC
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-
-    if not df.empty and "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-
-    return df
-
-
-def build_anomaly_summary(anomaly_df: pd.DataFrame) -> dict:
-    """
-    Creates homepage-friendly anomaly summary metrics.
-    """
-    summary = {
-        "total_scored_rows": 0,
-        "anomaly_count": 0,
-        "anomaly_rate": 0.0,
-        "strong_count": 0,
-        "top_driver": "Not available",
-        "latest_anomaly_timestamp": "Not available",
-    }
-
-    if anomaly_df.empty or "is_anomaly" not in anomaly_df.columns:
-        return summary
-
-    scored_rows = len(anomaly_df)
-    anomaly_only = anomaly_df[anomaly_df["is_anomaly"] == 1].copy()
-    anomaly_count = len(anomaly_only)
-    anomaly_rate = (anomaly_count / scored_rows * 100) if scored_rows > 0 else 0.0
-
-    summary["total_scored_rows"] = scored_rows
-    summary["anomaly_count"] = anomaly_count
-    summary["anomaly_rate"] = anomaly_rate
-
-    if "anomaly_strength" in anomaly_only.columns:
-        summary["strong_count"] = int((anomaly_only["anomaly_strength"] == "strong").sum())
-
-    if not anomaly_only.empty:
-        if "top_driver" in anomaly_only.columns:
-            driver_counts = anomaly_only["top_driver"].dropna().value_counts()
-            if not driver_counts.empty:
-                summary["top_driver"] = driver_counts.index[0]
-
-        if "timestamp" in anomaly_only.columns:
-            latest_ts = anomaly_only["timestamp"].max()
-            if pd.notna(latest_ts):
-                summary["latest_anomaly_timestamp"] = str(latest_ts)
-
-    return summary
+st.title("System Metrics Dashboard")
+st.caption("A concise overview of system activity and anomaly detection results.")
 
 
 # =========================
 # LOAD DATA
 # =========================
-st.title("System Metrics Monitoring Dashboard")
-st.write(
-    "A lightweight overview of the system monitoring pipeline. "
-    "Use the navigation cards below to explore anomaly detection, system information, and model details."
-)
+def normalize_anomaly_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Standardise anomaly result columns so the page works with both
+    older and newer saved outputs.
+    """
+    if df.empty:
+        return df.copy()
+
+    df = df.copy()
+
+    column_map = {
+        "is_anomaly": "anomaly_flag",
+        "anomaly_strength": "severity",
+        "top_driver": "dominant_driver",
+    }
+
+    rename_dict = {
+        old: new for old, new in column_map.items()
+        if old in df.columns and new not in df.columns
+    }
+
+    if rename_dict:
+        df = df.rename(columns=rename_dict)
+
+    if "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+    if "anomaly_score" in df.columns:
+        df["anomaly_score"] = pd.to_numeric(df["anomaly_score"], errors="coerce")
+
+    return df
 
 if not database_exists():
     st.error("Database not found. Please check that data/raw/system_metrics.db exists.")
     st.stop()
 
-df = load_data()
+metrics_df = load_metrics()
+anomaly_df = normalize_anomaly_columns(load_anomaly_results())
 
-if df.empty:
+if metrics_df.empty:
     st.warning("No data found in the metrics table yet.")
     st.stop()
-
-anomaly_df = load_anomaly_results()
 
 
 # =========================
 # PREP DATA
 # =========================
-summary = get_summary_metrics(df)
-chart_df = get_recent_window(df, days=7)
-anomaly_summary = build_anomaly_summary(anomaly_df)
+summary = get_summary_metrics(metrics_df)
+chart_df = get_recent_window(metrics_df, days=7)
+
+anomaly_count = get_anomaly_count(anomaly_df)
+anomaly_rate = get_anomaly_rate(anomaly_df)
+
+driver_df = get_top_anomaly_drivers(anomaly_df)
+top_driver = "N/A"
+if not driver_df.empty and "feature" in driver_df.columns:
+    top_driver = driver_df.iloc[0]["feature"]
+
+preview_df = get_anomaly_rows(anomaly_df, n=5)
 
 
 # =========================
-# KPI ROW
+# SYSTEM SNAPSHOT
 # =========================
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+section_header("System Snapshot")
 
-with kpi1:
-    with st.container(border=True):
-        st.metric("Latest Timestamp", summary["latest_timestamp_display"])
-
-with kpi2:
-    with st.container(border=True):
-        st.metric("Total Records", f'{summary["total_records"]:,}')
-
-with kpi3:
-    with st.container(border=True):
-        st.metric("Average CPU", f'{summary["avg_cpu"]:.1f}%')
-
-with kpi4:
-    with st.container(border=True):
-        st.metric("Average Memory", f'{summary["avg_memory"]:.1f}%')
-
-
-# =========================
-# ANOMALY OVERVIEW
-# =========================
-st.subheader("Latest Model Output")
-
-a1, a2, a3, a4 = st.columns(4)
-
-with a1:
-    with st.container(border=True):
-        st.metric("Detected Anomalies", f'{anomaly_summary["anomaly_count"]:,}')
-
-with a2:
-    with st.container(border=True):
-        st.metric("Anomaly Rate", f'{anomaly_summary["anomaly_rate"]:.2f}%')
-
-with a3:
-    with st.container(border=True):
-        st.metric("Strong Anomalies", f'{anomaly_summary["strong_count"]:,}')
-
-with a4:
-    with st.container(border=True):
-        st.metric("Top Driver", anomaly_summary["top_driver"])
-
-
-with st.container(border=True):
-    st.markdown("### Quick Interpretation")
-
-    if anomaly_df.empty:
-        st.info(
-            "No saved anomaly results were found yet. Run the training pipeline to populate the anomaly dashboard pages."
-        )
-    else:
-        st.write(
-            f"The latest saved model run scored {anomaly_summary['total_scored_rows']:,} records "
-            f"and flagged {anomaly_summary['anomaly_count']:,} anomalies "
-            f"({anomaly_summary['anomaly_rate']:.2f}% of scored rows)."
-        )
-
-        if anomaly_summary["top_driver"] != "Not available":
-            st.write(
-                f"The most common type of flagged behaviour was **{anomaly_summary['top_driver']}**."
-            )
-
-        if anomaly_summary["latest_anomaly_timestamp"] != "Not available":
-            st.write(
-                f"The latest detected anomaly in the saved results occurred at "
-                f"**{anomaly_summary['latest_anomaly_timestamp']}**."
-            )
-
-
-st.caption("Overview charts below show the most recent 7 days of data.")
+four_column_kpis([
+    {
+        "label": "Latest Timestamp",
+        "value": format_timestamp(summary.get("latest_timestamp")),
+    },
+    {
+        "label": "Total Records",
+        "value": format_large_number(summary.get("row_count")),
+    },
+    {
+        "label": "Average CPU",
+        "value": format_percentage(summary.get("avg_cpu")),
+    },
+    {
+        "label": "Average Memory",
+        "value": format_percentage(summary.get("avg_memory")),
+    },
+])
 
 
 # =========================
-# QUICK NAVIGATION
+# ANOMALY SNAPSHOT
 # =========================
-st.subheader("Explore the Dashboard")
+section_header("Anomaly Snapshot")
 
-nav1, nav2, nav3 = st.columns(3)
-
-with nav1:
-    with st.container(border=True):
-        st.markdown("### Anomalies")
-        st.write("Investigate detected anomalies and view flagged system behaviour on charts.")
-        st.page_link("pages/anomalies.py", label="Open Anomalies Page", icon="🚨")
-
-with nav2:
-    with st.container(border=True):
-        st.markdown("### System Info")
-        st.write("Review pipeline health, database coverage, time ranges, and data quality checks.")
-        st.page_link("pages/system_info.py", label="Open System Info Page", icon="🖥️")
-
-with nav3:
-    with st.container(border=True):
-        st.markdown("### Model Diagnostics")
-        st.write("Inspect model settings, anomaly scores, and feature-level detection details.")
-        st.page_link("pages/model_diagnostics.py", label="Open Model Diagnostics", icon="📈")
-
-
-# =========================
-# OVERVIEW CHARTS
-# =========================
-st.subheader("Recent System Behaviour")
-
-col1, col2 = st.columns(2)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    with st.container(border=True):
-        fig_cpu = make_line_chart(
-            chart_df,
-            y_col="cpu_percent",
-            title="CPU Usage",
-            y_label="CPU %"
-        )
-        st.plotly_chart(fig_cpu, width="stretch")
+    st.metric("Detected Anomalies", f"{anomaly_count:,}")
 
 with col2:
-    with st.container(border=True):
-        fig_memory = make_line_chart(
-            chart_df,
-            y_col="memory_percent",
-            title="Memory Usage",
-            y_label="Memory %"
-        )
-        st.plotly_chart(fig_memory, width="stretch")
+    st.metric(
+        "Anomaly Rate",
+        format_percentage(anomaly_rate, decimals=2) if anomaly_rate is not None else "N/A",
+    )
+
+with col3:
+    st.metric("Top Driver", str(top_driver).replace("_", " ").title())
 
 
 # =========================
-# RECENT ANOMALIES PREVIEW
+# RECENT SYSTEM BEHAVIOUR
 # =========================
-st.subheader("Recent Anomaly Preview")
+section_header("Recent System Behaviour", "Last 7 days")
 
-if anomaly_df.empty or "is_anomaly" not in anomaly_df.columns:
-    st.info("No anomaly preview is available yet.")
+chart_col1, chart_col2 = st.columns(2)
+
+with chart_col1:
+    cpu_fig = make_metric_line_chart(
+        chart_df,
+        metric="cpu_percent",
+        title="CPU Usage",
+    )
+    show_chart_or_empty(cpu_fig, "No CPU chart data available.")
+
+with chart_col2:
+    memory_fig = make_metric_line_chart(
+        chart_df,
+        metric="memory_percent",
+        title="Memory Usage",
+    )
+    show_chart_or_empty(memory_fig, "No memory chart data available.")
+
+
+# =========================
+# RECENT ANOMALY PREVIEW
+# =========================
+section_header("Recent Anomaly Preview")
+
+if preview_df.empty:
+    show_empty_state("No anomaly preview is available yet.")
 else:
-    anomaly_only = anomaly_df[anomaly_df["is_anomaly"] == 1].copy()
-
-    preview_cols = [
+    preview_columns = [
         "timestamp",
         "anomaly_score",
-        "anomaly_strength",
-        "top_driver",
-        "explanation",
+        "severity",
+        "dominant_driver",
         "cpu_percent",
         "memory_percent",
         "disk_percent",
-        "net_sent_delta_mb",
-        "net_recv_delta_mb",
     ]
-    available_preview_cols = [col for col in preview_cols if col in anomaly_only.columns]
+    available_columns = [col for col in preview_columns if col in preview_df.columns]
 
-    if anomaly_only.empty:
-        st.info("No anomalies have been flagged in the latest saved model output.")
-    else:
-        st.dataframe(
-            anomaly_only
-            .sort_values("anomaly_score", ascending=False)
-            .head(5)[available_preview_cols],
-            use_container_width=True,
-            hide_index=True
-        )
+    preview_display = preview_df[available_columns].copy()
+    show_dataframe_preview(
+        preview_display,
+        max_rows=5,
+        use_container_width=True,
+    )
+
+
+# =========================
+# QUICK LINKS
+# =========================
+section_header("Explore More")
+
+link_col1, link_col2, link_col3 = st.columns(3)
+
+with link_col1:
+    st.page_link("pages/anomalies.py", label="Open Anomalies", icon="🚨")
+
+with link_col2:
+    st.page_link("pages/model_diagnostics.py", label="Open Model Diagnostics", icon="📈")
+
+with link_col3:
+    st.page_link("pages/system_info.py", label="Open System Info", icon="🖥️")

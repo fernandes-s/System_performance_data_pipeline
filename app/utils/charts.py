@@ -13,18 +13,37 @@ def _get_metric_label(column_name: str) -> str:
     return METRIC_LABELS.get(column_name, column_name.replace("_", " ").title())
 
 
+# def _apply_standard_layout(fig, height: int = DEFAULT_CHART_HEIGHT):
+#     """
+#     Apply a consistent layout style across all charts.
+#     """
+#     fig.update_layout(
+#         height=height,
+#         margin=dict(l=20, r=20, t=50, b=20),
+#         template="plotly_white",
+#         legend_title_text="",
+#     )
+#     return fig
+
 def _apply_standard_layout(fig, height: int = DEFAULT_CHART_HEIGHT):
-    """
-    Apply a consistent layout style across all charts.
-    """
     fig.update_layout(
         height=height,
-        margin=dict(l=20, r=20, t=50, b=20),
+        margin=dict(l=20, r=20, t=60, b=20),
         template="plotly_white",
         legend_title_text="",
+        font=dict(size=16),
+        title_font=dict(size=22),
+        xaxis=dict(
+            title_font=dict(size=16),
+            tickfont=dict(size=14),
+        ),
+        yaxis=dict(
+            title_font=dict(size=16),
+            tickfont=dict(size=14),
+        ),
+        legend=dict(font=dict(size=14)),
     )
     return fig
-
 
 def make_metric_line_chart(
     df: pd.DataFrame,
