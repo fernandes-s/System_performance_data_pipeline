@@ -62,39 +62,49 @@ The pipeline collects the following system-level metrics:
 
 ```text
 System_performance_data_pipeline/
-├── app/
+├── app/                     # Streamlit dashboard application
 │   ├── main.py
 │   ├── pages/
 │   │   ├── anomalies.py
 │   │   ├── model_diagnostics.py
 │   │   └── system_info.py
 │   └── utils/
+│       ├── __init__.py
+│       ├── anomaly.py
+│       ├── charts.py
+│       ├── config.py
 │       ├── db.py
-│       └── helpers.py
+│       ├── formatters.py
+│       ├── metrics.py
+│       ├── queries.py
+│       └── ui_helpers.py
 ├── artifacts/
 │   └── models/
 │       ├── isolation_forest_model.joblib
 │       └── scaler.joblib
 ├── data/
-│   ├── daily_exports/
-│   └── raw/
+│   ├── daily_exports/       # Generated CSV outputs
+│   └── raw/                 # Source database
 │       └── system_metrics.db
-├── scripts/
+├── scripts/                 # Operational scripts and automation
+│   ├── auto_git_push.py
 │   ├── collect_metrics.py
 │   ├── create_db.py
 │   ├── db_checker.py
 │   ├── export_daily.py
-│   └── quick_db_test.py
+│   └── view_db.py
 ├── src/
 │   └── models/
 │       ├── anomaly_model.py
 │       ├── preprocessing.py
 │       └── train_model.py
-├── task_scheduler/
+├── task_scheduler/          # Windows Task Scheduler configurations
+│   ├── auto_git_push.xml
+│   ├── CollectSystemMetrics.xml
+│   └── ExportDailyMetrics.xml
 ├── requirements.txt
 └── README.md
 ```
-
 ---
 
 ## How the Pipeline Works
@@ -107,7 +117,7 @@ System performance metrics are collected from the local machine using Python. Th
 
 The collected metrics are stored in a SQLite database located at:
 
-```text
+text
 data/raw/system_metrics.db
 ```
 
