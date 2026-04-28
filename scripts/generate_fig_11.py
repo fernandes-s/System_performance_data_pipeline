@@ -116,7 +116,7 @@ def plot_example_anomaly_output(df: pd.DataFrame, output_path: Path) -> None:
     plot_df = df[df["timestamp"] >= (df["timestamp"].max() - pd.Timedelta(days=3))].copy()
     anomaly_df = plot_df[plot_df["is_anomaly"] == 1].copy()
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(4, 4))
 
     # Main metric line
     plt.plot(

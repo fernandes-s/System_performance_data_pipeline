@@ -82,7 +82,7 @@ def plot_anomaly_score_distribution(df: pd.DataFrame, output_path: Path) -> None
 
     thresholds = get_strength_thresholds(df)
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(5,4))
     plt.hist(df["anomaly_score"], bins=40, edgecolor="black")
 
     # Threshold lines
