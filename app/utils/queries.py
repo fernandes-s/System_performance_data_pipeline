@@ -131,7 +131,7 @@ def load_flagged_anomalies() -> pd.DataFrame:
     query = f"""
         SELECT *
         FROM {ANOMALY_TABLE}
-        WHERE anomaly_flag = 1
+        WHERE is_anomaly = 1
         ORDER BY timestamp DESC
     """
     return run_query(query)
@@ -153,7 +153,7 @@ def load_recent_flagged_anomalies(days: int = DEFAULT_RECENT_DAYS) -> pd.DataFra
     query = f"""
         SELECT *
         FROM {ANOMALY_TABLE}
-        WHERE anomaly_flag = 1
+        WHERE is_anomaly = 1
           AND timestamp >= datetime('now', ?)
         ORDER BY timestamp DESC
     """

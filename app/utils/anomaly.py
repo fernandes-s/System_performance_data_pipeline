@@ -106,7 +106,7 @@ def classify_anomaly_severity(
     """
     Classify anomaly severity using anomaly score quantiles.
 
-    More negative scores are treated as more anomalous.
+    Higher anomaly scores are treated as stronger anomalies.
 
     Args:
         df (pd.DataFrame): Input anomaly results DataFrame.
@@ -127,15 +127,15 @@ def classify_anomaly_severity(
         result[output_column] = "Unknown"
         return result
 
-    severe_cutoff = valid_scores.quantile(0.10)
-    moderate_cutoff = valid_scores.quantile(0.30)
+    severe_cutoff = valid_scores.quantile(0.90)
+    moderate_cutoff = valid_scores.quantile(0.70)
 
     def assign_severity(score):
         if pd.isna(score):
             return "Unknown"
-        if score <= severe_cutoff:
+        if score >= severe_cutoff:
             return "Severe"
-        if score <= moderate_cutoff:
+        if score >= moderate_cutoff:
             return "Moderate"
         return "Mild"
 
@@ -171,7 +171,7 @@ def get_anomaly_rows(
     if score_column in flagged.columns:
         flagged = flagged.copy()
         flagged[score_column] = pd.to_numeric(flagged[score_column], errors="coerce")
-        flagged = flagged.sort_values(by=score_column, ascending=True)
+        flagged = flagged.sort_values(by=score_column, ascending=False)
 
     return flagged.head(n).copy()
 
