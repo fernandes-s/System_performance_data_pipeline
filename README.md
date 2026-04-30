@@ -62,7 +62,7 @@ The pipeline collects the following system-level metrics:
 
 ```text
 System_performance_data_pipeline/
-├── app/                     # Streamlit dashboard application
+├── app/
 │   ├── main.py
 │   ├── pages/
 │   │   ├── anomalies.py
@@ -70,39 +70,40 @@ System_performance_data_pipeline/
 │   │   └── system_info.py
 │   └── utils/
 │       ├── __init__.py
-│       ├── anomaly.py
-│       ├── charts.py
 │       ├── config.py
 │       ├── db.py
+│       ├── queries.py
 │       ├── formatters.py
 │       ├── metrics.py
-│       ├── queries.py
+│       ├── anomaly.py
+│       ├── charts.py
 │       └── ui_helpers.py
 ├── artifacts/
+│   ├── figures/
 │   └── models/
 │       ├── isolation_forest_model.joblib
 │       └── scaler.joblib
 ├── data/
-│   ├── daily_exports/       # Generated CSV outputs
-│   └── raw/                 # Source database
+│   ├── daily_exports/
+│   └── raw/
 │       └── system_metrics.db
-├── scripts/                 # Operational scripts and automation
+├── scripts/
 │   ├── auto_git_push.py
 │   ├── collect_metrics.py
 │   ├── create_db.py
 │   ├── db_checker.py
 │   ├── export_daily.py
+│   ├── generate_fig_5.py
+│   ├── generate_fig_11.py
 │   └── view_db.py
 ├── src/
 │   └── models/
 │       ├── anomaly_model.py
 │       ├── preprocessing.py
 │       └── train_model.py
-├── task_scheduler/          # Windows Task Scheduler configurations
-│   ├── auto_git_push.xml
-│   ├── CollectSystemMetrics.xml
-│   └── ExportDailyMetrics.xml
+├── task_scheduler/
 ├── requirements.txt
+├── LICENSE
 └── README.md
 ```
 ---
