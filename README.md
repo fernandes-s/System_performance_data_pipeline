@@ -69,9 +69,17 @@ System_performance_data_pipeline/
 │   │   ├── model_diagnostics.py
 │   │   └── system_info.py
 │   └── utils/
+│       ├── __init__.py
+│       ├── config.py
 │       ├── db.py
-│       └── helpers.py
+│       ├── queries.py
+│       ├── formatters.py
+│       ├── metrics.py
+│       ├── anomaly.py
+│       ├── charts.py
+│       └── ui_helpers.py
 ├── artifacts/
+│   ├── figures/
 │   └── models/
 │       ├── isolation_forest_model.joblib
 │       └── scaler.joblib
@@ -80,11 +88,14 @@ System_performance_data_pipeline/
 │   └── raw/
 │       └── system_metrics.db
 ├── scripts/
+│   ├── auto_git_push.py
 │   ├── collect_metrics.py
 │   ├── create_db.py
 │   ├── db_checker.py
 │   ├── export_daily.py
-│   └── quick_db_test.py
+│   ├── generate_fig_5.py
+│   ├── generate_fig_11.py
+│   └── view_db.py
 ├── src/
 │   └── models/
 │       ├── anomaly_model.py
@@ -92,9 +103,9 @@ System_performance_data_pipeline/
 │       └── train_model.py
 ├── task_scheduler/
 ├── requirements.txt
+├── LICENSE
 └── README.md
 ```
-
 ---
 
 ## How the Pipeline Works
@@ -107,7 +118,7 @@ System performance metrics are collected from the local machine using Python. Th
 
 The collected metrics are stored in a SQLite database located at:
 
-```text
+text
 data/raw/system_metrics.db
 ```
 
