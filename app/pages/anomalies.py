@@ -39,7 +39,9 @@ st.set_page_config(
 )
 
 st.title("Anomaly Detection")
-st.caption("A concise view of flagged behaviour, anomaly severity, and the main drivers over time.")
+st.caption(
+    "A concise view of flagged behaviour, anomaly severity, and the main drivers over time."
+)
 
 
 # =========================
@@ -106,6 +108,13 @@ if df.empty:
 
 
 # =========================
+# ADD SEVERITY IF MISSING
+# =========================
+if "severity" not in df.columns:
+    df = classify_anomaly_severity(df)
+
+
+# =========================
 # SIDEBAR FILTERS
 # =========================
 st.sidebar.header("Filters")
@@ -125,10 +134,23 @@ if isinstance(selected_dates, tuple) and len(selected_dates) == 2:
 else:
     start_date, end_date = min_date, max_date
 
-filtered_df = df[
+
+# Date-filtered dataframe.
+# This is used for the KPI snapshot so the anomaly rate is not affected
+# by the "Show anomalies only" display filter.
+date_filtered_df = df[
     (df["timestamp"].dt.date >= start_date) &
     (df["timestamp"].dt.date <= end_date)
 ].copy()
+
+if date_filtered_df.empty:
+    st.warning("No records found for the selected date range.")
+    st.stop()
+
+
+# Display dataframe.
+# This is used for charts, tables, and export.
+filtered_df = date_filtered_df.copy()
 
 show_only_anomalies = st.sidebar.checkbox("Show anomalies only", value=True)
 
@@ -146,7 +168,9 @@ if "severity" in filtered_df.columns:
         )
 
         if selected_severity:
-            filtered_df = filtered_df[filtered_df["severity"].isin(selected_severity)].copy()
+            filtered_df = filtered_df[
+                filtered_df["severity"].isin(selected_severity)
+            ].copy()
 
 if filtered_df.empty:
     st.warning("No records found for the selected filters.")
@@ -156,29 +180,18 @@ anomaly_only = filtered_df[filtered_df["anomaly_flag"] == 1].copy()
 
 
 # =========================
-# ADD SEVERITY IF MISSING
-# =========================
-if "severity" not in filtered_df.columns:
-    filtered_df = classify_anomaly_severity(filtered_df)
-    anomaly_only = filtered_df[filtered_df["anomaly_flag"] == 1].copy()
-
-
-# =========================
 # KPI SNAPSHOT
 # =========================
-latest_timestamp = filtered_df["timestamp"].max()
-anomaly_count = get_anomaly_count(filtered_df)
-anomaly_rate = get_anomaly_rate(filtered_df)
+latest_timestamp = date_filtered_df["timestamp"].max()
 
-top_driver_df = get_top_anomaly_drivers(filtered_df)
-top_driver = "N/A"
-if not top_driver_df.empty and "feature" in top_driver_df.columns:
-    top_driver = str(top_driver_df.iloc[0]["feature"]).replace("_", " ").title()
+total_rows = len(date_filtered_df)
+anomaly_count = get_anomaly_count(date_filtered_df)
+anomaly_rate = get_anomaly_rate(date_filtered_df)
 
 four_column_kpis([
     {
-        "label": "Total Rows",
-        "value": format_large_number(len(filtered_df)),
+        "label": "Total Rows in Date Range",
+        "value": format_large_number(total_rows),
     },
     {
         "label": "Detected Anomalies",
@@ -186,19 +199,25 @@ four_column_kpis([
     },
     {
         "label": "Anomaly Rate",
-        "value": format_percentage(anomaly_rate, decimals=2) if anomaly_rate is not None else "N/A",
+        "value": format_percentage(anomaly_rate, decimals=2)
+        if anomaly_rate is not None
+        else "N/A",
     },
     {
-        "label": "Latest Record",
-        "value": format_timestamp(latest_timestamp),
+        "label": "Rows Displayed",
+        "value": format_large_number(len(filtered_df)),
     },
 ])
+
+st.caption(f"Latest record in selected date range: {format_timestamp(latest_timestamp)}")
 
 
 # =========================
 # SEVERITY + DRIVER SUMMARY
 # =========================
 section_header("Severity and Drivers")
+
+top_driver_df = get_top_anomaly_drivers(filtered_df)
 
 left_col, right_col = st.columns(2)
 
@@ -228,6 +247,7 @@ with timeline_col1:
 
 with timeline_col2:
     metric_for_timeline = None
+
     for col in ["cpu_percent", "memory_percent", "disk_percent"]:
         if col in filtered_df.columns:
             metric_for_timeline = col
@@ -267,7 +287,11 @@ else:
         "net_sent_delta_mb",
         "net_recv_delta_mb",
     ]
-    available_columns = [col for col in preview_columns if col in preview_df.columns]
+
+    available_columns = [
+        col for col in preview_columns
+        if col in preview_df.columns
+    ]
 
     preview_display = preview_df[available_columns].copy()
     show_dataframe_preview(preview_display, max_rows=10)
@@ -284,6 +308,7 @@ with st.expander("Full filtered results and export"):
     )
 
     csv = filtered_df.to_csv(index=False).encode("utf-8")
+
     st.download_button(
         label="Download filtered results as CSV",
         data=csv,
